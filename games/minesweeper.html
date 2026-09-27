@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minesweeper</title>
+<link rel="stylesheet" href="../assets/game.css">
+<style>
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
+  .controls .btn.on { border-color: var(--accent); color: var(--accent); }
+  .info { display: flex; gap: 18px; font-size: 18px; font-weight: 700; }
+  .scroller { max-width: 100%; overflow-x: auto; padding-bottom: 4px; }
+  .grid {
+    display: grid;
+    gap: 2px;
+    background: #1c2242;
+    padding: 6px;
+    border-radius: 10px;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .grid button {
+    width: var(--sz); height: var(--sz);
+    padding: 0; border: none; border-radius: 4px;
+    font: 800 calc(var(--sz) * .55) system-ui, sans-serif;
+    background: #3a4478; color: #fff; cursor: pointer;
+    box-shadow: inset 0 -3px 0 rgba(0,0,0,.25);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .grid button:hover { background: #46529a; }
+  .grid button.open { background: #151a2e; box-shadow: none; cursor: default; }
+  .grid button.boom { background: #ff4f5e; }
+  .n1 { color: #5ea8ff !important; } .n2 { color: #5eff8a !important; } .n3 { color: #ff6b6b !important; }
+  .n4 { color: #c86bff !important; } .n5 { color: #ffb13e !important; } .n6 { color: #3ee6e6 !important; }
+  .n7 { color: #fff !important; } .n8 { color: #aaa !important; }
+</style>
+</head>
+<body>
+<header class="bar">
+  <a class="back" href="../index.html">← Arcade</a>
+  <h1>Minesweeper</h1>
+  <button class="btn" id="mute" title="Sound on/off">🔊</button>
+</header>
+
+<main class="stage">
+  <div class="controls">
+    <button class="btn on" data-lv="easy">Easy</button>
+    <button class="btn" data-lv="medium">Medium</button>
+    <button class="btn" data-lv="hard">Hard</button>
+    <button class="btn" id="flagMode">🚩 Flag mode: off</button>
+  </div>
+  <div class="info"><span id="mines">💣 10</span><span id="face">🙂</span><span id="time">⏱ 0</span></div>
+  <div class="scroller"><div class="grid" id="grid"></div></div>
+  <div id="bestLine" class="help" style="margin:0"></div>
+</main>
+
+<p class="help">
+  Click to reveal, right-click (or turn on Flag mode on touchscreens) to flag a mine.
+  Click a number whose flags are all placed to open its neighbours. Your first click is always safe.
+</p>
+
+<script src="../assets/common.js"></script>
+<script>
+(() => {
+  const LEVELS = { easy: [9, 9, 10], medium: [16, 16, 40], hard: [30, 16, 99] };
+  const gridEl = document.getElementById('grid');
+  let lv = 'easy', cols, rows, mines, cells, first, over, flags, opened, timer, t0, flagMode = false;
+
+  function newGame() {
+    [cols, rows, mines] = LEVELS[lv];
+    const size = Math.max(22, Math.min(36, Math.floor((Math.min(window.innerWidth, 1000) - 60) / cols)));
+    gridEl.style.setProperty('--sz', size + 'px');
+    gridEl.style.gridTemplateColumns = `repeat(${cols}, var(--sz))`;
+    gridEl.innerHTML = '';
+    cells = [];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const b = document.createElement('button');
+      const cell = { r, c, mine: false, n: 0, open: false, flag: false, el: b };
+      b.addEventListener('click', () => (flagMode ? toggleFlag(cell) : reveal(cell)));
+      b.addEventListener('contextmenu', (e) => { e.preventDefault(); toggleFlag(cell); });
+      gridEl.appendChild(b);
+      cells.push(cell);
+    }
+    first = true; over = false; flags = 0; opened = 0;
+    clearInterval(timer); timer = null;
+    document.getElementById('time').textContent = '⏱ 0';
+    document.getElementById('face').textContent = '🙂';
+    updateMines();
+    const best = Arcade.get('mines_' + lv + '_time', null);
+    document.getElementById('bestLine').textContent = best ? `Best ${lv} time: ${best}s` : '';
+  }
+
+  const at = (r, c) => (r >= 0 && c >= 0 && r < rows && c < cols ? cells[r * cols + c] : null);
+  function around(cell) {
+    const out = [];
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      if (dr || dc) { const n = at(cell.r + dr, cell.c + dc); if (n) out.push(n); }
+    }
+    return out;
+  }
+
+  function plant(safe) {
+    const banned = new Set([safe, ...around(safe)]);
+    let left = mines;
+    while (left > 0) {
+      const cell = cells[Math.floor(Math.random() * cells.length)];
+      if (cell.mine || banned.has(cell)) continue;
+      cell.mine = true; left--;
+    }
+    cells.forEach((cell) => { cell.n = around(cell).filter((n) => n.mine).length; });
+  }
+
+  function updateMines() { document.getElementById('mines').textContent = '💣 ' + (mines - flags); }
+
+  function toggleFlag(cell) {
+    if (over || cell.open) return;
+    cell.flag = !cell.flag;
+    flags += cell.flag ? 1 : -1;
+    cell.el.textContent = cell.flag ? '🚩' : '';
+    Arcade.beep(cell.flag ? 700 : 500, 0.04, 'square', 0.04);
+    updateMines();
+  }
+
+  function reveal(cell) {
+    if (over || cell.flag) return;
+    if (first) {
+      first = false;
+      plant(cell);
+      t0 = Date.now();
+      timer = setInterval(() => {
+        document.getElementById('time').textContent = '⏱ ' + Math.floor((Date.now() - t0) / 1000);
+      }, 250);
+    }
+    if (cell.open) {
+      // Chord: open neighbours if the flag count matches.
+      const nb = around(cell);
+      if (cell.n && nb.filter((n) => n.flag).length === cell.n) nb.forEach((n) => { if (!n.open && !n.flag) reveal(n); });
+      return;
+    }
+    if (cell.mine) return lose(cell);
+    const stack = [cell];
+    while (stack.length) {
+      const cur = stack.pop();
+      if (cur.open || cur.flag) continue;
+      cur.open = true; opened++;
+      cur.el.classList.add('open');
+      if (cur.n) { cur.el.textContent = cur.n; cur.el.classList.add('n' + cur.n); }
+      else around(cur).forEach((n) => { if (!n.open && !n.mine) stack.push(n); });
+    }
+    Arcade.beep(420, 0.03, 'triangle', 0.05);
+    if (opened === rows * cols - mines) win();
+  }
+
+  function lose(cell) {
+    over = true;
+    clearInterval(timer);
+    cell.el.classList.add('boom');
+    cells.forEach((c) => {
+      if (c.mine && !c.flag) { c.el.textContent = '💣'; c.el.classList.add('open'); }
+      if (!c.mine && c.flag) c.el.textContent = '❌';
+    });
+    cell.el.classList.remove('open');
+    document.getElementById('face').textContent = '😵';
+    Arcade.noise(0.4, 0.2);
+  }
+
+  function win() {
+    over = true;
+    clearInterval(timer);
+    const secs = Math.floor((Date.now() - t0) / 1000);
+    cells.forEach((c) => { if (c.mine) c.el.textContent = '🚩'; });
+    document.getElementById('face').textContent = '😎';
+    const best = Arcade.get('mines_' + lv + '_time', null);
+    if (best === null || secs < best) Arcade.set('mines_' + lv + '_time', secs);
+    document.getElementById('bestLine').textContent = `Cleared in ${secs}s! Best ${lv} time: ${Math.min(secs, best ?? secs)}s`;
+    Arcade.beep(523, 0.12, 'triangle', 0.1);
+    setTimeout(() => Arcade.beep(784, 0.25, 'triangle', 0.1), 120);
+  }
+
+  document.querySelectorAll('[data-lv]').forEach((b) => b.addEventListener('click', () => {
+    lv = b.dataset.lv;
+    document.querySelectorAll('[data-lv]').forEach((x) => x.classList.toggle('on', x === b));
+    newGame();
+  }));
+  document.getElementById('face').addEventListener('click', newGame);
+  document.getElementById('face').style.cursor = 'pointer';
+  document.getElementById('flagMode').addEventListener('click', (e) => {
+    flagMode = !flagMode;
+    e.currentTarget.textContent = '🚩 Flag mode: ' + (flagMode ? 'on' : 'off');
+    e.currentTarget.classList.toggle('on', flagMode);
+  });
+
+  newGame();
+})();
+</script>
+</body>
+</html>

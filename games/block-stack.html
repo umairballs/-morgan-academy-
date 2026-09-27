@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Block Stack</title>
+<link rel="stylesheet" href="../assets/game.css">
+</head>
+<body>
+<header class="bar">
+  <a class="back" href="../index.html">← Arcade</a>
+  <h1>Block Stack</h1>
+  <div class="stats"><span>Best <b id="best">0</b></span></div>
+  <button class="btn" id="mute" title="Sound on/off">🔊</button>
+</header>
+
+<main class="stage">
+  <div class="wrap">
+    <canvas class="game" id="c" width="480" height="600"></canvas>
+    <div class="overlay" id="ov">
+      <h2 id="ovTitle">Block Stack</h2>
+      <p id="ovText">Clear lines by filling rows. Four at once is a Stack!</p>
+      <button class="btn primary" id="go">Play</button>
+    </div>
+  </div>
+  <div class="touch-pad">
+    <button class="btn" data-a="left">◀</button>
+    <button class="btn" data-a="rot">⟳</button>
+    <button class="btn" data-a="right">▶</button>
+    <button class="btn" data-a="soft">▼</button>
+    <button class="btn" data-a="hard">⤓</button>
+    <button class="btn" data-a="hold">Hold</button>
+  </div>
+</main>
+
+<p class="help">
+  <kbd>←</kbd> <kbd>→</kbd> move · <kbd>↑</kbd>/<kbd>X</kbd> rotate · <kbd>Z</kbd> rotate back ·
+  <kbd>↓</kbd> soft drop · <kbd>Space</kbd> hard drop · <kbd>C</kbd>/<kbd>Shift</kbd> hold · <kbd>P</kbd> pause
+</p>
+
+<script src="../assets/common.js"></script>
+<script>
+(() => {
+  Arcade.preventScroll();
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const COLS = 10, ROWS = 20, S = 30, BX = 0, PANEL = 300;
+  const SHAPES = {
+    I: [[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]],
+    J: [[1, 0, 0], [1, 1, 1], [0, 0, 0]],
+    L: [[0, 0, 1], [1, 1, 1], [0, 0, 0]],
+    O: [[1, 1], [1, 1]],
+    S: [[0, 1, 1], [1, 1, 0], [0, 0, 0]],
+    T: [[0, 1, 0], [1, 1, 1], [0, 0, 0]],
+    Z: [[1, 1, 0], [0, 1, 1], [0, 0, 0]],
+  };
+  const COLORS = { I: '#3ee6ff', J: '#4f7bff', L: '#ff9f3e', O: '#ffe14d', S: '#5eff8a', T: '#c86bff', Z: '#ff4f6b' };
+
+  let board, cur, bag, queue, hold, canHold, score, lines, level, dropT, state = 'menu', flash = [];
+  document.getElementById('best').textContent = Arcade.get('stack_best', 0);
+
+  const rotate = (m) => m[0].map((_, i) => m.map((r) => r[i]).reverse());
+  const rotateBack = (m) => rotate(rotate(rotate(m)));
+
+  function nextType() {
+    if (!bag.length) {
+      bag = Object.keys(SHAPES);
+      for (let i = bag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [bag[i], bag[j]] = [bag[j], bag[i]];
+      }
+    }
+    return bag.pop();
+  }
+
+  function spawn(type) {
+    const m = SHAPES[type].map((r) => r.slice());
+    cur = { type, m, x: Math.floor((COLS - m.length) / 2), y: type === 'I' ? -1 : 0 };
+    if (collide(cur.m, cur.x, cur.y)) end();
+  }
+
+  function collide(m, x, y) {
+    for (let r = 0; r < m.length; r++) {
+      for (let c = 0; c < m[r].length; c++) {
+        if (!m[r][c]) continue;
+        const bx = x + c, by = y + r;
+        if (bx < 0 || bx >= COLS || by >= ROWS) return true;
+        if (by >= 0 && board[by][bx]) return true;
+      }
+    }
+    return false;
+  }
+
+  function reset() {
+    board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    bag = []; queue = [nextType(), nextType(), nextType()];
+    hold = null; canHold = true; score = 0; lines = 0; level = 1; dropT = 0; flash = [];
+    spawn(queue.shift()); queue.push(nextType());
+  }
+
+  function lock() {
+    for (let r = 0; r < cur.m.length; r++) {
+      for (let c = 0; c < cur.m[r].length; c++) {
+        if (!cur.m[r][c]) continue;
+        const y = cur.y + r;
+        if (y < 0) return end();
+        board[y][cur.x + c] = cur.type;
+      }
+    }
+    const full = [];
+    for (let r = 0; r < ROWS; r++) if (board[r].every(Boolean)) full.push(r);
+    if (full.length) {
+      full.forEach((r) => { board.splice(r, 1); board.unshift(Array(COLS).fill(null)); });
+      flash = full.map((r) => ({ r, t: 12 }));
+      score += [0, 100, 300, 500, 800][full.length] * level;
+      lines += full.length;
+      level = Math.floor(lines / 10) + 1;
+      if (full.length === 4) { Arcade.beep(523, 0.1, 'square', 0.08); setTimeout(() => Arcade.beep(1046, 0.25, 'square', 0.08), 90); }
+      else Arcade.beep(660 + full.length * 100, 0.12, 'square', 0.07);
+    } else {
+      Arcade.beep(150, 0.05, 'triangle', 0.08);
+    }
+    canHold = true;
+    spawn(queue.shift());
+    queue.push(nextType());
+  }
+
+  function move(dx) {
+    if (!collide(cur.m, cur.x + dx, cur.y)) { cur.x += dx; return true; }
+    return false;
+  }
+
+  function turn(back) {
+    const m = back ? rotateBack(cur.m) : rotate(cur.m);
+    for (const [kx, ky] of [[0, 0], [-1, 0], [1, 0], [0, -1], [-2, 0], [2, 0], [0, 1]]) {
+      if (!collide(m, cur.x + kx, cur.y + ky)) {
+        cur.m = m; cur.x += kx; cur.y += ky;
+        Arcade.beep(440, 0.03, 'square', 0.04);
+        return;
+      }
+    }
+  }
+
+  function soft() {
+    if (!collide(cur.m, cur.x, cur.y + 1)) { cur.y++; score += 1; dropT = 0; }
+    else lock();
+  }
+
+  function hard() {
+    let n = 0;
+    while (!collide(cur.m, cur.x, cur.y + 1)) { cur.y++; n++; }
+    score += n * 2;
+    lock();
+  }
+
+  function doHold() {
+    if (!canHold) return;
+    const t = cur.type;
+    if (hold) spawn(hold); else { spawn(queue.shift()); queue.push(nextType()); }
+    hold = t; canHold = false;
+  }
+
+  function ghostY() {
+    let y = cur.y;
+    while (!collide(cur.m, cur.x, y + 1)) y++;
+    return y;
+  }
+
+  function end() {
+    state = 'over';
+    const best = Arcade.best('stack', score);
+    document.getElementById('best').textContent = best;
+    document.getElementById('ovTitle').textContent = 'Game Over';
+    document.getElementById('ovText').textContent = `Score ${score} · Lines ${lines} · Best ${best}`;
+    document.getElementById('go').textContent = 'Play again';
+    document.getElementById('ov').classList.remove('hidden');
+    Arcade.beep(200, 0.5, 'sawtooth', 0.08, -150);
+  }
+
+  function interval() { return Math.max(60, 800 * Math.pow(0.85, level - 1)); }
+
+  // ---- Drawing ----
+  function cell(x, y, color, size = S, alpha = 1) {
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.fillRect(x + 1, y + 1, size - 2, size - 2);
+    ctx.fillStyle = 'rgba(255,255,255,.28)';
+    ctx.fillRect(x + 1, y + 1, size - 2, 4);
+    ctx.fillStyle = 'rgba(0,0,0,.25)';
+    ctx.fillRect(x + 1, y + size - 5, size - 2, 4);
+    ctx.globalAlpha = 1;
+  }
+
+  function mini(type, x, y) {
+    if (!type) return;
+    const m = SHAPES[type], s = 18;
+    const w = m[0].length * s, h = m.length * s;
+    m.forEach((row, r) => row.forEach((v, c) => {
+      if (v) cell(x + (100 - w) / 2 + c * s, y + (60 - h) / 2 + r * s, COLORS[type], s);
+    }));
+  }
+
+  function draw() {
+    ctx.fillStyle = '#0d1022';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.strokeStyle = '#1a2040';
+    ctx.lineWidth = 1;
+    for (let c = 0; c <= COLS; c++) { ctx.beginPath(); ctx.moveTo(BX + c * S + .5, 0); ctx.lineTo(BX + c * S + .5, ROWS * S); ctx.stroke(); }
+    for (let r = 0; r <= ROWS; r++) { ctx.beginPath(); ctx.moveTo(BX, r * S + .5); ctx.lineTo(BX + COLS * S, r * S + .5); ctx.stroke(); }
+
+    if (board) {
+      board.forEach((row, r) => row.forEach((t, c) => { if (t) cell(BX + c * S, r * S, COLORS[t]); }));
+      flash.forEach((f) => {
+        ctx.fillStyle = `rgba(255,255,255,${f.t / 14})`;
+        ctx.fillRect(BX, f.r * S, COLS * S, S);
+        f.t--;
+      });
+      flash = flash.filter((f) => f.t > 0);
+
+      if (cur && state === 'play') {
+        const gy = ghostY();
+        cur.m.forEach((row, r) => row.forEach((v, c) => {
+          if (!v) return;
+          if (gy + r >= 0) cell(BX + (cur.x + c) * S, (gy + r) * S, COLORS[cur.type], S, 0.22);
+          if (cur.y + r >= 0) cell(BX + (cur.x + c) * S, (cur.y + r) * S, COLORS[cur.type]);
+        }));
+      }
+    }
+
+    // Side panel
+    ctx.fillStyle = '#151a2e';
+    ctx.fillRect(PANEL, 0, cv.width - PANEL, cv.height);
+    ctx.fillStyle = '#8d95c2';
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    const px = PANEL + 40;
+    ctx.fillText('NEXT', px, 26);
+    if (queue) queue.forEach((t, i) => mini(t, px, 34 + i * 64));
+    ctx.fillStyle = '#8d95c2';
+    ctx.fillText('HOLD', px, 250);
+    if (hold) { ctx.globalAlpha = canHold ? 1 : 0.4; mini(hold, px, 258); ctx.globalAlpha = 1; }
+
+    const stat = (label, v, y) => {
+      ctx.fillStyle = '#8d95c2';
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.fillText(label, px, y);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 24px system-ui, sans-serif';
+      ctx.fillText(v, px, y + 28);
+    };
+    stat('SCORE', score || 0, 360);
+    stat('LINES', lines || 0, 430);
+    stat('LEVEL', level || 1, 500);
+
+    if (state === 'pause') {
+      ctx.fillStyle = 'rgba(0,0,0,.6)';
+      ctx.fillRect(0, 0, PANEL, cv.height);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 28px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('PAUSED', PANEL / 2, 300);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  // ---- Input ----
+  function act(a) {
+    if (state !== 'play') return;
+    if (a === 'left') move(-1);
+    else if (a === 'right') move(1);
+    else if (a === 'rot') turn(false);
+    else if (a === 'rotb') turn(true);
+    else if (a === 'soft') soft();
+    else if (a === 'hard') hard();
+    else if (a === 'hold') doHold();
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape') && (state === 'play' || state === 'pause')) {
+      state = state === 'play' ? 'pause' : 'play';
+      return;
+    }
+    if (state !== 'play') {
+      if ((e.key === 'Enter' || e.key === ' ') && state !== 'pause') begin();
+      return;
+    }
+    const map = {
+      ArrowLeft: 'left', a: 'left', ArrowRight: 'right', d: 'right', ArrowUp: 'rot', x: 'rot', w: 'rot',
+      z: 'rotb', ArrowDown: 'soft', s: 'soft', ' ': 'hard', c: 'hold', Shift: 'hold',
+    };
+    const a = map[e.key] || map[e.key.toLowerCase()];
+    if (a) act(a);
+  });
+
+  document.querySelectorAll('[data-a]').forEach((b) => {
+    b.addEventListener('pointerdown', (e) => { e.preventDefault(); act(b.dataset.a); });
+  });
+
+  function begin() {
+    reset();
+    state = 'play';
+    Arcade.audio();
+    document.getElementById('ov').classList.add('hidden');
+  }
+  document.getElementById('go').addEventListener('click', begin);
+
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(100, now - last);
+    last = now;
+    if (state === 'play') {
+      dropT += dt;
+      if (dropT >= interval()) {
+        dropT = 0;
+        if (!collide(cur.m, cur.x, cur.y + 1)) cur.y++;
+        else lock();
+      }
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

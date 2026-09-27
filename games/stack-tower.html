@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stack Tower</title>
+<link rel="stylesheet" href="../assets/game.css">
+</head>
+<body>
+<header class="bar">
+  <a class="back" href="../index.html">← Arcade</a>
+  <h1>Stack Tower</h1>
+  <div class="stats"><span>Best <b id="best">0</b></span></div>
+  <button class="btn" id="mute" title="Sound on/off">🔊</button>
+</header>
+
+<main class="stage">
+  <canvas class="game" id="c" width="400" height="640"></canvas>
+</main>
+
+<p class="help"><kbd>Space</kbd>, click, or tap to drop the sliding block. Whatever hangs over the edge gets sliced off. Land perfectly to build a combo!</p>
+
+<script src="../assets/common.js"></script>
+<script>
+(() => {
+  Arcade.preventScroll();
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const W = 400, H = 640, BH = 28, DEPTH = 18, START_W = 220;
+
+  let stack, mover, debris, camY, state, combo, hue0, perfectFx;
+  const bestEl = document.getElementById('best');
+  bestEl.textContent = Arcade.get('stacktower_best', 0);
+
+  function reset() {
+    hue0 = Math.random() * 360;
+    stack = [{ x: (W - START_W) / 2, w: START_W, hue: hue0 }];
+    debris = []; camY = 0; combo = 0; perfectFx = 0;
+    newMover();
+    state = 'ready';
+  }
+
+  function newMover() {
+    const top = stack[stack.length - 1];
+    const fromLeft = stack.length % 2 === 0;
+    const speed = Math.min(7, 2.6 + stack.length * 0.08);
+    mover = { x: fromLeft ? -top.w : W, w: top.w, v: fromLeft ? speed : -speed, hue: hue0 + stack.length * 8 };
+  }
+
+  function drop() {
+    Arcade.audio();
+    if (state === 'ready') { state = 'play'; return; }
+    if (state === 'over') { reset(); return; }
+    const top = stack[stack.length - 1];
+    const left = Math.max(mover.x, top.x), right = Math.min(mover.x + mover.w, top.x + top.w);
+    const overlap = right - left;
+    if (overlap <= 0) {
+      debris.push({ x: mover.x, y: stack.length, w: mover.w, hue: mover.hue, vy: 0, vx: mover.v * 0.3, off: 0 });
+      mover = null;
+      state = 'over';
+      Arcade.beep(180, 0.4, 'sawtooth', 0.08, -120);
+      bestEl.textContent = Arcade.best('stacktower', stack.length - 1);
+      return;
+    }
+    if (Math.abs(mover.x - top.x) < 5) {
+      // Perfect landing: snap and grow a little on long combos.
+      combo++;
+      let w = top.w, x = top.x;
+      if (combo >= 3) { w = Math.min(START_W, w + 8); x = top.x - (w - top.w) / 2; }
+      stack.push({ x, w, hue: mover.hue });
+      perfectFx = 20;
+      Arcade.beep(440 * Math.pow(2, Math.min(combo, 12) / 12), 0.15, 'sine', 0.1);
+    } else {
+      combo = 0;
+      const cutX = mover.x < top.x ? mover.x : right;
+      const cutW = mover.w - overlap;
+      debris.push({ x: cutX, y: stack.length, w: cutW, hue: mover.hue, vy: 0, vx: mover.x < top.x ? -1 : 1, off: 0 });
+      stack.push({ x: left, w: overlap, hue: mover.hue });
+      Arcade.beep(330, 0.06, 'square', 0.06);
+    }
+    newMover();
+  }
+
+  function update() {
+    if (state === 'play' && mover) {
+      mover.x += mover.v;
+      if (mover.x + mover.w > W + 40 && mover.v > 0) mover.v *= -1;
+      if (mover.x < -40 && mover.v < 0) mover.v *= -1;
+    }
+    debris.forEach((d) => { d.vy += 0.5; d.off += d.vy; d.x += d.vx; });
+    debris = debris.filter((d) => d.off < 1200);
+    const target = Math.max(0, (stack.length - 10) * BH);
+    camY += (target - camY) * 0.1;
+    if (perfectFx > 0) perfectFx--;
+  }
+
+  function block(x, level, w, hue, yOff = 0) {
+    const y = H - 90 - level * BH + camY + yOff;
+    ctx.fillStyle = `hsl(${hue}, 70%, 60%)`;
+    ctx.fillRect(x, y, w, BH);
+    ctx.fillStyle = `hsl(${hue}, 70%, 72%)`;
+    ctx.beginPath();
+    ctx.moveTo(x, y); ctx.lineTo(x + DEPTH, y - DEPTH / 1.6); ctx.lineTo(x + w + DEPTH, y - DEPTH / 1.6); ctx.lineTo(x + w, y);
+    ctx.fill();
+    ctx.fillStyle = `hsl(${hue}, 60%, 42%)`;
+    ctx.beginPath();
+    ctx.moveTo(x + w, y); ctx.lineTo(x + w + DEPTH, y - DEPTH / 1.6); ctx.lineTo(x + w + DEPTH, y + BH - DEPTH / 1.6); ctx.lineTo(x + w, y + BH);
+    ctx.fill();
+  }
+
+  function draw() {
+    const topHue = hue0 + stack.length * 8;
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, `hsl(${topHue + 40}, 45%, 22%)`);
+    g.addColorStop(1, `hsl(${topHue}, 45%, 10%)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // Base pillar
+    ctx.fillStyle = `hsl(${hue0}, 30%, 20%)`;
+    ctx.fillRect(stack[0].x, H - 90 + BH + camY, stack[0].w, 400);
+
+    stack.forEach((b, i) => block(b.x, i, b.w, b.hue));
+    if (mover) block(mover.x, stack.length, mover.w, mover.hue);
+    debris.forEach((d) => block(d.x, d.y, d.w, d.hue, d.off));
+
+    if (perfectFx > 0) {
+      const b = stack[stack.length - 1];
+      const y = H - 90 - (stack.length - 1) * BH + camY;
+      ctx.strokeStyle = `rgba(255,255,255,${perfectFx / 20})`;
+      ctx.lineWidth = 3;
+      const grow = (20 - perfectFx) * 1.5;
+      ctx.strokeRect(b.x - grow, y - grow, b.w + grow * 2, BH + grow * 2);
+    }
+
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.font = '900 56px system-ui, sans-serif';
+    ctx.fillText(stack.length - 1, W / 2, 90);
+    if (combo >= 2) {
+      ctx.font = 'bold 18px system-ui, sans-serif';
+      ctx.fillText(`Perfect x${combo}`, W / 2, 120);
+    }
+    if (state === 'ready') {
+      ctx.font = 'bold 22px system-ui, sans-serif';
+      ctx.fillText('Tap to start', W / 2, 200);
+    }
+    if (state === 'over') {
+      ctx.font = 'bold 28px system-ui, sans-serif';
+      ctx.fillText('Game Over', W / 2, 190);
+      ctx.font = '18px system-ui, sans-serif';
+      ctx.fillText(`Best: ${Arcade.get('stacktower_best', 0)} · Tap to retry`, W / 2, 222);
+    }
+    ctx.textAlign = 'left';
+  }
+
+  window.addEventListener('keydown', (e) => { if (!e.repeat && (e.key === ' ' || e.key === 'Enter')) drop(); });
+  cv.addEventListener('mousedown', drop);
+  cv.addEventListener('touchstart', (e) => { e.preventDefault(); drop(); }, { passive: false });
+
+  reset();
+  let last = performance.now(), acc = 0;
+  function loop(now) {
+    acc += Math.min(100, now - last);
+    last = now;
+    while (acc >= 1000 / 60) { update(); acc -= 1000 / 60; }
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

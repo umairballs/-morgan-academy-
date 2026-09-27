@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cookie Tycoon</title>
+<link rel="stylesheet" href="../assets/game.css">
+<style>
+  .game-grid {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) minmax(280px, 380px);
+    gap: 16px;
+    width: min(100%, 960px);
+    padding: 16px;
+    margin: 0 auto;
+  }
+  @media (max-width: 720px) { .game-grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+  }
+  .left { display: flex; flex-direction: column; align-items: center; gap: 8px; position: relative; overflow: hidden; }
+  .count { font-size: 34px; font-weight: 800; margin: 0; }
+  .cps { color: var(--muted); margin: 0; }
+  #cookie {
+    width: min(260px, 70vw);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    margin: 18px 0;
+    background:
+      radial-gradient(circle at 30% 30%, #5b3413 0 7%, transparent 8%),
+      radial-gradient(circle at 62% 24%, #5b3413 0 6%, transparent 7%),
+      radial-gradient(circle at 70% 58%, #5b3413 0 8%, transparent 9%),
+      radial-gradient(circle at 38% 68%, #5b3413 0 7%, transparent 8%),
+      radial-gradient(circle at 50% 45%, #5b3413 0 5%, transparent 6%),
+      radial-gradient(circle at 20% 52%, #5b3413 0 4%, transparent 5%),
+      radial-gradient(circle at 40% 35%, #f3c07a, #d08a3c 70%, #a8631f);
+    box-shadow: 0 10px 40px rgba(255, 170, 60, .25), inset -10px -14px 0 rgba(0,0,0,.15);
+    transition: transform .06s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #cookie:active { transform: scale(.94); }
+  .float {
+    position: absolute;
+    pointer-events: none;
+    font-weight: 800;
+    color: #fff;
+    text-shadow: 0 2px 4px #000;
+    animation: rise 1s ease-out forwards;
+  }
+  @keyframes rise { to { transform: translateY(-80px); opacity: 0; } }
+  .store h2 { margin: 0 0 10px; font-size: 18px; }
+  .item {
+    display: grid;
+    grid-template-columns: 36px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    background: #1c2242;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .item:disabled { opacity: .45; cursor: default; }
+  .item:not(:disabled):hover { border-color: var(--accent); }
+  .item .ic { font-size: 26px; text-align: center; }
+  .item .nm { font-weight: 700; }
+  .item .sub { font-size: 12px; color: var(--muted); }
+  .item .own { font-size: 22px; font-weight: 800; color: var(--muted); }
+  .upgrades { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .upg {
+    width: 46px; height: 46px; font-size: 22px;
+    background: #1c2242; border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+  }
+  .upg:disabled { opacity: .4; cursor: default; }
+  #golden {
+    position: absolute; width: 64px; height: 64px; border-radius: 50%; border: none; cursor: pointer;
+    background: radial-gradient(circle at 35% 35%, #fff6c4, #ffd23f 60%, #c99500);
+    box-shadow: 0 0 30px #ffd23f; display: none; animation: spin 3s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .row { display: flex; gap: 8px; }
+</style>
+</head>
+<body>
+<header class="bar">
+  <a class="back" href="../index.html">← Arcade</a>
+  <h1>Cookie Tycoon</h1>
+  <button class="btn" id="mute" title="Sound on/off">🔊</button>
+</header>
+
+<div class="game-grid">
+  <section class="panel left" id="left">
+    <p class="count" id="count">0 cookies</p>
+    <p class="cps" id="cps">per second: 0</p>
+    <button id="cookie" aria-label="Big cookie"></button>
+    <p class="cps" id="total"></p>
+    <div class="row">
+      <button class="btn" id="reset">Reset save</button>
+    </div>
+    <button id="golden" aria-label="Golden cookie"></button>
+  </section>
+  <section class="panel store">
+    <h2>Upgrades</h2>
+    <div class="upgrades" id="upgrades"></div>
+    <h2>Buildings</h2>
+    <div id="store"></div>
+  </section>
+</div>
+
+<p class="help">Click the cookie, buy buildings to bake for you, and grab golden cookies when they appear. Progress saves automatically on this computer.</p>
+
+<script src="../assets/common.js"></script>
+<script>
+(() => {
+  const BUILDINGS = [
+    { id: 'cursor', name: 'Cursor', icon: '👆', cost: 15, cps: 0.1 },
+    { id: 'grandma', name: 'Grandma', icon: '👵', cost: 100, cps: 1 },
+    { id: 'farm', name: 'Farm', icon: '🌾', cost: 1100, cps: 8 },
+    { id: 'mine', name: 'Mine', icon: '⛏️', cost: 12000, cps: 47 },
+    { id: 'factory', name: 'Factory', icon: '🏭', cost: 130000, cps: 260 },
+    { id: 'bank', name: 'Bank', icon: '🏦', cost: 1.4e6, cps: 1400 },
+    { id: 'temple', name: 'Temple', icon: '🛕', cost: 2e7, cps: 7800 },
+    { id: 'tower', name: 'Wizard Tower', icon: '🧙', cost: 3.3e8, cps: 44000 },
+    { id: 'rocket', name: 'Rocket', icon: '🚀', cost: 5.1e9, cps: 260000 },
+    { id: 'lab', name: 'Time Lab', icon: '⏳', cost: 7.5e10, cps: 1.6e6 },
+  ];
+  // Each upgrade doubles a building's output (or click power).
+  const UPGRADES = [];
+  [['click', '🖱️', 'Stronger clicks', 50], ['click', '💪', 'Iron fingers', 5000], ['click', '⚡', 'Lightning taps', 5e5], ['click', '🌟', 'Cosmic clicks', 5e7]]
+    .forEach(([t, i, n, c], k) => UPGRADES.push({ id: 'u_click' + k, target: t, icon: i, name: n, cost: c, need: 0 }));
+  BUILDINGS.forEach((b) => {
+    [1, 10, 25].forEach((need, k) => UPGRADES.push({
+      id: `u_${b.id}${k}`, target: b.id, icon: b.icon, name: `${b.name} upgrade ${k + 1}`,
+      cost: b.cost * [10, 50, 500][k], need,
+    }));
+  });
+
+  const blank = () => ({ cookies: 0, total: 0, owned: {}, upg: {}, clicks: 0 });
+  let s = Object.assign(blank(), Arcade.get('cookie_save', {}));
+
+  const $ = (id) => document.getElementById(id);
+  const NAMES = ['', ' thousand', ' million', ' billion', ' trillion', ' quadrillion', ' quintillion'];
+  function fmt(n) {
+    if (n < 1000) return n < 10 && n % 1 ? n.toFixed(1) : Math.floor(n).toString();
+    const e = Math.min(NAMES.length - 1, Math.floor(Math.log10(n) / 3));
+    if (e === 1) return Math.floor(n).toLocaleString();
+    return (n / Math.pow(1000, e)).toFixed(2) + NAMES[e];
+  }
+
+  const owned = (id) => s.owned[id] || 0;
+  const mult = (target) => Math.pow(2, UPGRADES.filter((u) => u.target === target && s.upg[u.id]).length);
+  const price = (b) => Math.ceil(b.cost * Math.pow(1.15, owned(b.id)));
+  let frenzy = 0;
+  function cps() {
+    const base = BUILDINGS.reduce((sum, b) => sum + owned(b.id) * b.cps * mult(b.id), 0);
+    return base * (frenzy > 0 ? 7 : 1);
+  }
+  function clickPower() { return (1 + cps() * 0.01) * mult('click'); }
+
+  // ---- Store UI ----
+  const storeEl = $('store');
+  const itemEls = BUILDINGS.map((b) => {
+    const el = document.createElement('button');
+    el.className = 'item';
+    el.innerHTML = `<span class="ic">${b.icon}</span><span><div class="nm">${b.name}</div><div class="sub"></div></span><span class="own"></span>`;
+    el.addEventListener('click', () => {
+      const p = price(b);
+      if (s.cookies < p) return;
+      s.cookies -= p;
+      s.owned[b.id] = owned(b.id) + 1;
+      Arcade.beep(660, 0.06, 'triangle', 0.07);
+      render(true);
+    });
+    storeEl.appendChild(el);
+    return el;
+  });
+
+  function renderUpgrades() {
+    const box = $('upgrades');
+    box.innerHTML = '';
+    const avail = UPGRADES.filter((u) => !s.upg[u.id] && (u.target === 'click' || owned(u.target) >= u.need) && (u.target !== 'click' || s.total >= u.cost / 5))
+      .sort((a, b) => a.cost - b.cost).slice(0, 12);
+    if (!avail.length) box.innerHTML = '<span class="cps">Buy more buildings to unlock upgrades.</span>';
+    avail.forEach((u) => {
+      const b = document.createElement('button');
+      b.className = 'upg';
+      b.textContent = u.icon;
+      b.title = `${u.name} — ${fmt(u.cost)} cookies\nDoubles ${u.target === 'click' ? 'click power' : 'this building\'s output'}`;
+      b.disabled = s.cookies < u.cost;
+      b.dataset.cost = u.cost;
+      b.addEventListener('click', () => {
+        if (s.cookies < u.cost) return;
+        s.cookies -= u.cost;
+        s.upg[u.id] = true;
+        Arcade.beep(880, 0.1, 'triangle', 0.07);
+        render(true);
+      });
+      box.appendChild(b);
+    });
+  }
+
+  function render(full) {
+    $('count').textContent = fmt(s.cookies) + ' cookies';
+    $('cps').textContent = 'per second: ' + fmt(cps()) + (frenzy > 0 ? ' (FRENZY x7!)' : '');
+    $('total').textContent = `Baked all-time: ${fmt(s.total)} · Clicks: ${s.clicks}`;
+    BUILDINGS.forEach((b, i) => {
+      const el = itemEls[i];
+      // Hide buildings until you're close to affording them.
+      const visible = i === 0 || owned(BUILDINGS[i - 1].id) > 0 || s.total >= b.cost * 0.5;
+      el.style.display = visible ? '' : 'none';
+      el.disabled = s.cookies < price(b);
+      el.querySelector('.sub').textContent = `${fmt(price(b))} cookies · +${fmt(b.cps * mult(b.id))}/s each`;
+      el.querySelector('.own').textContent = owned(b.id) || '';
+    });
+    if (full) renderUpgrades();
+    else document.querySelectorAll('.upg').forEach((b) => { b.disabled = s.cookies < +b.dataset.cost; });
+  }
+
+  // ---- Clicking ----
+  const left = $('left');
+  $('cookie').addEventListener('click', (e) => {
+    const gain = clickPower();
+    s.cookies += gain; s.total += gain; s.clicks++;
+    Arcade.beep(300 + Math.random() * 80, 0.03, 'sine', 0.05);
+    const r = left.getBoundingClientRect();
+    const f = document.createElement('div');
+    f.className = 'float';
+    f.textContent = '+' + fmt(gain);
+    const x = e.clientX ? e.clientX - r.left : r.width / 2;
+    const y = e.clientY ? e.clientY - r.top : r.height / 2;
+    f.style.left = x - 20 + 'px';
+    f.style.top = y - 20 + 'px';
+    left.appendChild(f);
+    setTimeout(() => f.remove(), 1000);
+    render(false);
+  });
+
+  // ---- Golden cookie ----
+  const golden = $('golden');
+  let goldenT = 30 + Math.random() * 60;
+  function spawnGolden() {
+    const r = left.getBoundingClientRect();
+    golden.style.left = Math.random() * (r.width - 64) + 'px';
+    golden.style.top = Math.random() * (r.height - 64) + 'px';
+    golden.style.display = 'block';
+    setTimeout(() => { golden.style.display = 'none'; }, 10000);
+  }
+  golden.addEventListener('click', () => {
+    golden.style.display = 'none';
+    if (Math.random() < 0.5) {
+      frenzy = 30;
+      toast('Frenzy! Production x7 for 30 seconds');
+    } else {
+      const bonus = Math.max(13, Math.min(s.cookies * 0.15, cps() * 900));
+      s.cookies += bonus; s.total += bonus;
+      toast('Lucky! +' + fmt(bonus) + ' cookies');
+    }
+    Arcade.beep(1046, 0.2, 'triangle', 0.08);
+    render(true);
+  });
+  function toast(msg) {
+    const f = document.createElement('div');
+    f.className = 'float';
+    f.style.left = '10px'; f.style.right = '10px'; f.style.top = '120px'; f.style.textAlign = 'center';
+    f.style.fontSize = '20px'; f.style.color = '#ffd23f';
+    f.textContent = msg;
+    left.appendChild(f);
+    setTimeout(() => f.remove(), 1000);
+  }
+
+  $('reset').addEventListener('click', () => {
+    if (!confirm('Erase your bakery and start over?')) return;
+    s = blank();
+    Arcade.set('cookie_save', s);
+    render(true);
+  });
+
+  // ---- Main tick ----
+  let last = performance.now(), saveT = 0, upgT = 0;
+  setInterval(() => {
+    const now = performance.now();
+    const dt = Math.min(5, (now - last) / 1000);
+    last = now;
+    const gain = cps() * dt;
+    s.cookies += gain; s.total += gain;
+    if (frenzy > 0) frenzy -= dt;
+    goldenT -= dt;
+    if (goldenT <= 0) { goldenT = 60 + Math.random() * 120; spawnGolden(); }
+    saveT += dt; upgT += dt;
+    if (saveT > 5) { saveT = 0; Arcade.set('cookie_save', s); Arcade.best('cookie', Math.floor(s.total)); }
+    // Refresh the upgrade list now and then so new ones appear.
+    render(upgT > 2);
+    if (upgT > 2) upgT = 0;
+    document.title = fmt(s.cookies) + ' cookies · Cookie Tycoon';
+  }, 100);
+  window.addEventListener('beforeunload', () => Arcade.set('cookie_save', s));
+
+  render(true);
+})();
+</script>
+</body>
+</html>

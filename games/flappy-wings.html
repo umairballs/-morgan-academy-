@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flappy Wings</title>
+<link rel="stylesheet" href="../assets/game.css">
+</head>
+<body>
+<header class="bar">
+  <a class="back" href="../index.html">← Arcade</a>
+  <h1>Flappy Wings</h1>
+  <div class="stats"><span>Best <b id="best">0</b></span></div>
+  <button class="btn" id="mute" title="Sound on/off">🔊</button>
+</header>
+
+<main class="stage">
+  <canvas class="game" id="c" width="400" height="600"></canvas>
+</main>
+
+<p class="help"><kbd>Space</kbd>, <kbd>↑</kbd>, click, or tap to flap. Fly through the gaps between the pipes.</p>
+
+<script src="../assets/common.js"></script>
+<script>
+(() => {
+  Arcade.preventScroll();
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const W = 400, H = 600, FLOOR = 520;
+  const GRAV = 0.42, FLAP = -7.4, GAP = 150, PIPE_W = 64, SPACING = 210, SPEED = 2.6;
+
+  let bird, pipes, score, state, frame, groundX, deathT;
+  const bestEl = document.getElementById('best');
+  bestEl.textContent = Arcade.get('flappy_best', 0);
+
+  const clouds = Array.from({ length: 6 }, (_, i) => ({ x: i * 90, y: 60 + (i * 53) % 180, s: 0.6 + (i % 3) * 0.3 }));
+
+  function reset() {
+    bird = { x: 110, y: 280, vy: 0, rot: 0 };
+    pipes = [];
+    score = 0; frame = 0; groundX = 0; deathT = 0;
+    state = 'ready';
+  }
+
+  function addPipe(x) {
+    const top = 80 + Math.random() * (FLOOR - GAP - 160);
+    pipes.push({ x, top, passed: false });
+  }
+
+  function flap() {
+    Arcade.audio();
+    if (state === 'ready') { state = 'play'; addPipe(W + 40); }
+    if (state === 'play') {
+      bird.vy = FLAP;
+      Arcade.beep(620, 0.06, 'triangle', 0.06, 200);
+    } else if (state === 'over' && deathT > 30) {
+      reset();
+    }
+  }
+
+  function die() {
+    if (state !== 'play') return;
+    state = 'over';
+    deathT = 0;
+    Arcade.noise(0.2, 0.2);
+    bestEl.textContent = Arcade.best('flappy', score);
+  }
+
+  function update() {
+    frame++;
+    if (state !== 'over') groundX = (groundX - SPEED) % 24;
+    clouds.forEach((c) => { c.x -= c.s * (state === 'over' ? 0 : 0.4); if (c.x < -80) c.x = W + 40; });
+
+    if (state === 'ready') {
+      bird.y = 280 + Math.sin(frame / 10) * 8;
+      return;
+    }
+    if (state === 'over') {
+      deathT++;
+      if (bird.y < FLOOR - 14) { bird.vy += GRAV; bird.y = Math.min(FLOOR - 14, bird.y + bird.vy); }
+      bird.rot = Math.min(Math.PI / 2, bird.rot + 0.15);
+      return;
+    }
+
+    bird.vy += GRAV;
+    bird.y += bird.vy;
+    bird.rot = Math.max(-0.5, Math.min(Math.PI / 2, bird.vy * 0.08));
+
+    pipes.forEach((p) => { p.x -= SPEED; });
+    if (pipes.length && pipes[pipes.length - 1].x < W + 40 - SPACING) addPipe(W + 40);
+    pipes = pipes.filter((p) => p.x > -PIPE_W - 10);
+
+    for (const p of pipes) {
+      if (!p.passed && p.x + PIPE_W < bird.x) {
+        p.passed = true; score++;
+        Arcade.beep(880, 0.08, 'square', 0.05);
+        setTimeout(() => Arcade.beep(1320, 0.1, 'square', 0.05), 70);
+      }
+      const r = 13;
+      if (bird.x + r > p.x && bird.x - r < p.x + PIPE_W && (bird.y - r < p.top || bird.y + r > p.top + GAP)) die();
+    }
+    if (bird.y + 14 >= FLOOR) { bird.y = FLOOR - 14; die(); }
+    if (bird.y < -40) bird.y = -40;
+  }
+
+  function drawPipe(x, y, h, flip) {
+    const g = ctx.createLinearGradient(x, 0, x + PIPE_W, 0);
+    g.addColorStop(0, '#3fbf48'); g.addColorStop(0.5, '#8cf07a'); g.addColorStop(1, '#2d9a35');
+    ctx.fillStyle = g;
+    ctx.fillRect(x, y, PIPE_W, h);
+    ctx.strokeStyle = '#1b5e20'; ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, PIPE_W, h);
+    const lipY = flip ? y + h - 26 : y;
+    ctx.fillStyle = g;
+    ctx.fillRect(x - 5, lipY, PIPE_W + 10, 26);
+    ctx.strokeRect(x - 5, lipY, PIPE_W + 10, 26);
+  }
+
+  function draw() {
+    const sky = ctx.createLinearGradient(0, 0, 0, FLOOR);
+    sky.addColorStop(0, '#4ec0ff'); sky.addColorStop(1, '#bff0ff');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    clouds.forEach((c) => {
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 22, 0, Math.PI * 2);
+      ctx.arc(c.x + 24, c.y - 10, 26, 0, Math.PI * 2);
+      ctx.arc(c.x + 50, c.y, 20, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // Distant city
+    ctx.fillStyle = '#9ed9c8';
+    for (let i = 0; i < 12; i++) {
+      const h = 40 + ((i * 37) % 60);
+      ctx.fillRect(i * 36, FLOOR - h, 32, h);
+    }
+
+    pipes.forEach((p) => {
+      drawPipe(p.x, -4, p.top + 4, true);
+      drawPipe(p.x, p.top + GAP, FLOOR - p.top - GAP, false);
+    });
+
+    // Ground
+    ctx.fillStyle = '#ded895';
+    ctx.fillRect(0, FLOOR, W, H - FLOOR);
+    ctx.fillStyle = '#73bf2e';
+    ctx.fillRect(0, FLOOR, W, 18);
+    ctx.fillStyle = '#5ea022';
+    for (let x = groundX; x < W; x += 24) {
+      ctx.beginPath();
+      ctx.moveTo(x, FLOOR + 18); ctx.lineTo(x + 12, FLOOR); ctx.lineTo(x + 24, FLOOR); ctx.lineTo(x + 12, FLOOR + 18);
+      ctx.fill();
+    }
+
+    // Bird
+    ctx.save();
+    ctx.translate(bird.x, bird.y);
+    ctx.rotate(bird.rot);
+    ctx.fillStyle = '#ffd23f';
+    ctx.beginPath(); ctx.ellipse(0, 0, 18, 14, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#6b4b00'; ctx.lineWidth = 2; ctx.stroke();
+    const wing = state === 'over' ? 0 : Math.sin(frame / 3) * 6;
+    ctx.fillStyle = '#fff3c4';
+    ctx.beginPath(); ctx.ellipse(-6, 2 + wing / 2, 9, 5 + Math.abs(wing) / 3, -0.3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(7, -5, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(9, -5, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff7a2e';
+    ctx.beginPath(); ctx.moveTo(12, 1); ctx.lineTo(24, 4); ctx.lineTo(12, 8); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    // Text
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = '#000';
+    ctx.fillStyle = '#fff';
+    const text = (t, x, y, size) => {
+      ctx.font = `900 ${size}px system-ui, sans-serif`;
+      ctx.strokeText(t, x, y); ctx.fillText(t, x, y);
+    };
+    if (state !== 'ready') text(score, W / 2, 80, 48);
+    if (state === 'ready') {
+      text('Get Ready!', W / 2, 170, 40);
+      text('Tap or press Space', W / 2, 400, 20);
+    }
+    if (state === 'over') {
+      text('Game Over', W / 2, 190, 44);
+      const best = Arcade.get('flappy_best', 0);
+      ctx.fillStyle = '#ded895';
+      ctx.strokeStyle = '#6b4b00'; ctx.lineWidth = 3;
+      ctx.fillRect(W / 2 - 120, 220, 240, 130);
+      ctx.strokeRect(W / 2 - 120, 220, 240, 130);
+      const medal = score >= 40 ? '#e5e4e2' : score >= 30 ? '#ffd23f' : score >= 20 ? '#c0c0c0' : score >= 10 ? '#cd7f32' : null;
+      if (medal) {
+        ctx.fillStyle = medal;
+        ctx.beginPath(); ctx.arc(W / 2 - 65, 285, 28, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+      ctx.fillStyle = '#6b4b00';
+      ctx.font = 'bold 16px system-ui, sans-serif';
+      ctx.fillText('SCORE', W / 2 + 50, 250);
+      ctx.fillText('BEST', W / 2 + 50, 305);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#000';
+      ctx.fillStyle = '#fff';
+      text(score, W / 2 + 50, 280, 26);
+      text(best, W / 2 + 50, 335, 26);
+      if (deathT > 30) text('Tap to retry', W / 2, 400, 22);
+    }
+    ctx.textAlign = 'left';
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') flap();
+  });
+  cv.addEventListener('mousedown', flap);
+  cv.addEventListener('touchstart', (e) => { e.preventDefault(); flap(); }, { passive: false });
+
+  reset();
+  let last = performance.now(), acc = 0;
+  function loop(now) {
+    acc += Math.min(100, now - last);
+    last = now;
+    while (acc >= 1000 / 60) { update(); acc -= 1000 / 60; }
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

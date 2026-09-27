@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cube Dash</title>
+<link rel="stylesheet" href="../assets/game.css">
+</head>
+<body>
+<header class="bar">
+  <a class="back" href="../index.html">← Arcade</a>
+  <h1>Cube Dash</h1>
+  <div class="stats"><span>Attempt <b id="attempt">1</b></span></div>
+  <button class="btn" id="mute" title="Sound on/off">🔊</button>
+</header>
+
+<main class="stage">
+  <div class="wrap">
+    <canvas class="game" id="c" width="800" height="450"></canvas>
+    <div class="overlay" id="menu">
+      <h2>Cube Dash</h2>
+      <p>Pick a level. Jump over spikes, land on blocks, hit the pads and orbs.</p>
+      <div id="levels" class="touch-pad"></div>
+    </div>
+    <div class="overlay hidden" id="done">
+      <h2 id="doneTitle">Level Complete!</h2>
+      <p id="doneText"></p>
+      <div class="touch-pad">
+        <button class="btn primary" id="again">Play again</button>
+        <button class="btn" id="toMenu">Levels</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<p class="help">
+  <kbd>Space</kbd> / <kbd>↑</kbd> / click / tap to jump. Hold to keep jumping.
+  Press while touching a <span style="color:#ffe14d">yellow orb</span> to jump in mid-air.
+  <kbd>Esc</kbd> returns to the level list.
+</p>
+
+<script src="../assets/common.js"></script>
+<script>
+(() => {
+  Arcade.preventScroll();
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const W = 800, H = 450, T = 40, GROUND = 380, PX = 200;
+  const G = 0.9, JUMP = 13.5, PAD = 19, ORB = 14, MAXV = 18;
+
+  const LEVELS = [
+    { id: 'stereo', name: 'Stereo Start', stars: 1, seed: 11, chunks: 22, diff: 1, speed: 6.0, hue: 215 },
+    { id: 'drift', name: 'Neon Drift', stars: 2, seed: 29, chunks: 30, diff: 2, speed: 6.6, hue: 285 },
+    { id: 'void', name: 'Hyper Void', stars: 3, seed: 53, chunks: 38, diff: 3, speed: 7.2, hue: 345 },
+    { id: 'endless', name: 'Endless', stars: 0, seed: 0, chunks: Infinity, diff: 3, speed: 6.2, hue: 160 },
+  ];
+
+  // Obstacle patterns. Rows are listed top → bottom; the last row sits on the ground.
+  //  ^ spike   # block   _ jump pad   o jump orb
+  const CHUNKS = [
+    [1, ['..^...']],
+    [1, ['..^^...']],
+    [1, ['..#....']],
+    [1, ['..###....']],
+    [1, ['....##...', '..####...']],
+    [1, ['..._.^^^.......']],
+    [1, ['..##..^....']],
+    [2, ['..^^^.....']],
+    [2, ['..##...##...', '..##^^^##...']],
+    [2, ['..###^^^.....']],
+    [2, ['.....o.......', '.............', '.............', '..^^^^^^^....']],
+    [2, ['..#..^.....']],
+    [2, ['..^.^^.......']],
+    [3, ['......###...', '...###^^^...']],
+    [3, ['....^......', '..#####....']],
+    [3, ['.......####....', '...............', '...............', '..._...........']],
+    [3, ['..^^^...^^^.....']],
+    [3, ['........###....', '.....###^^^....', '..###^^^^^^....']],
+  ];
+
+  function rng(seed) {
+    let s = seed >>> 0 || 1;
+    return () => {
+      s ^= s << 13; s >>>= 0;
+      s ^= s >> 17;
+      s ^= s << 5; s >>>= 0;
+      return s / 4294967296;
+    };
+  }
+
+  let level, objs, cursor, rand, endX;
+  let dist, p, dead, deadTimer, attempt, won, running = false;
+  let held = false, buffer = 0, frame = 0;
+  let particles = [];
+  const attemptEl = document.getElementById('attempt');
+
+  function addChunk(maxDiff) {
+    const pool = CHUNKS.filter((c) => c[0] <= maxDiff);
+    // Favour harder chunks once they unlock.
+    let pick = pool[Math.floor(rand() * pool.length)];
+    if (maxDiff > 1 && pick[0] < maxDiff && rand() < 0.45) {
+      const hard = pool.filter((c) => c[0] === maxDiff);
+      pick = hard[Math.floor(rand() * hard.length)];
+    }
+    const rows = pick[1];
+    const width = Math.max(...rows.map((r) => r.length));
+    rows.forEach((row, i) => {
+      const r = rows.length - 1 - i; // 0 = ground row
+      for (let c = 0; c < row.length; c++) {
+        const ch = row[c];
+        const x = cursor + c * T;
+        const y = GROUND - (r + 1) * T;
+        if (ch === '#') objs.push({ t: 'block', x, y, w: T, h: T });
+        else if (ch === '^') objs.push({ t: 'spike', x, y, w: T, h: T });
+        else if (ch === '_') objs.push({ t: 'pad', x, y: GROUND - r * T - 8, w: T, h: 8 });
+        else if (ch === 'o') objs.push({ t: 'orb', x, y, w: T, h: T, used: false });
+      }
+    });
+    cursor += (width + 2 + Math.floor(rand() * 3)) * T;
+  }
+
+  function build() {
+    objs = [];
+    cursor = PX + 12 * T;
+    rand = rng(level.seed || (Date.now() & 0xffff) + 1);
+    if (level.chunks !== Infinity) {
+      for (let i = 0; i < level.chunks; i++) {
+        // Difficulty ramps up through the level.
+        const d = Math.min(level.diff, 1 + Math.floor((i / level.chunks) * (level.diff + 0.6)));
+        addChunk(d);
+      }
+      endX = cursor + 6 * T;
+    } else {
+      endX = Infinity;
+    }
+  }
+
+  function reset() {
+    build();
+    dist = 0;
+    p = { y: GROUND - T, vy: 0, grounded: true, rot: 0 };
+    dead = false; won = false; deadTimer = 0; buffer = 0;
+    particles = [];
+    attemptEl.textContent = attempt;
+    music.start();
+  }
+
+  function start(lv) {
+    level = lv;
+    attempt = 1;
+    reset();
+    running = true;
+    document.getElementById('menu').classList.add('hidden');
+    document.getElementById('done').classList.add('hidden');
+  }
+
+  function speed() {
+    if (level.chunks !== Infinity) return level.speed;
+    return Math.min(8.5, level.speed + dist / 30000);
+  }
+
+  function endlessDiff() {
+    return Math.min(3, 1 + Math.floor(dist / 5000));
+  }
+
+  function overlap(ax, ay, aw, ah, bx, by, bw, bh) {
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  }
+
+  function die() {
+    if (dead) return;
+    dead = true;
+    deadTimer = 50;
+    Arcade.noise(0.35, 0.18);
+    music.stop();
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 6;
+      particles.push({ x: dist + T / 2, y: p.y + T / 2, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 40, size: 4 + Math.random() * 6 });
+    }
+    if (level.chunks === Infinity) {
+      Arcade.best('cubedash_endless', Math.floor(dist / T));
+    } else {
+      Arcade.best('cubedash_' + level.id, Math.floor(progress() * 100));
+    }
+  }
+
+  function progress() {
+    return endX === Infinity ? 0 : Math.min(1, dist / endX);
+  }
+
+  function win() {
+    won = true;
+    running = false;
+    music.stop();
+    Arcade.best('cubedash_' + level.id, 100);
+    Arcade.beep(523, 0.12, 'triangle', 0.1);
+    setTimeout(() => Arcade.beep(784, 0.25, 'triangle', 0.1), 120);
+    document.getElementById('doneTitle').textContent = 'Level Complete!';
+    document.getElementById('doneText').textContent =
+      `${level.name} beaten in ${attempt} attempt${attempt === 1 ? '' : 's'}.`;
+    document.getElementById('done').classList.remove('hidden');
+  }
+
+  function step() {
+    frame++;
+    particles.forEach((q) => { q.x += q.vx; q.y += q.vy; q.vy += 0.25; q.life--; });
+    particles = particles.filter((q) => q.life > 0);
+
+    if (dead) {
+      if (--deadTimer <= 0) { attempt++; reset(); }
+      return;
+    }
+
+    if (level.chunks === Infinity) {
+      while (cursor < dist + W * 2) addChunk(endlessDiff());
+      if (frame % 300 === 0) objs = objs.filter((o) => o.x > dist - W);
+    }
+
+    dist += speed();
+    const prevBottom = p.y + T;
+    p.vy = Math.min(MAXV, p.vy + G);
+    p.y += p.vy;
+    p.grounded = false;
+
+    if (p.y + T >= GROUND) { p.y = GROUND - T; p.vy = 0; p.grounded = true; }
+
+    const px = dist;
+    for (const o of objs) {
+      if (o.x > px + T + 20 || o.x + o.w < px - 20) continue;
+      if (o.t === 'block') {
+        if (overlap(px, p.y, T, T, o.x, o.y, o.w, o.h)) {
+          if (p.vy >= 0 && prevBottom <= o.y + 12) {
+            p.y = o.y - T; p.vy = 0; p.grounded = true;
+          } else {
+            return die();
+          }
+        }
+      } else if (o.t === 'spike') {
+        if (overlap(px + 5, p.y + 5, T - 10, T - 10, o.x + 14, o.y + 14, 12, 26)) return die();
+      } else if (o.t === 'pad') {
+        if (overlap(px, p.y, T, T, o.x, o.y - 4, o.w, o.h + 4) && p.vy >= 0) {
+          p.vy = -PAD; p.grounded = false;
+          Arcade.beep(660, 0.12, 'sine', 0.08, 400);
+        }
+      } else if (o.t === 'orb') {
+        if (!o.used && buffer > 0 && overlap(px, p.y, T, T, o.x - 14, o.y - 14, o.w + 28, o.h + 28)) {
+          o.used = true; buffer = 0;
+          p.vy = -ORB; p.grounded = false;
+          Arcade.beep(880, 0.1, 'sine', 0.08, 300);
+          for (let i = 0; i < 12; i++) {
+            const a = (i / 12) * Math.PI * 2;
+            particles.push({ x: o.x + T / 2, y: o.y + T / 2, vx: Math.cos(a) * 4, vy: Math.sin(a) * 4, life: 20, size: 4, orb: true });
+          }
+        }
+      }
+    }
+
+    if (p.grounded) {
+      const target = Math.round(p.rot / (Math.PI / 2)) * (Math.PI / 2);
+      p.rot += (target - p.rot) * 0.5;
+      if (held || buffer > 0) {
+        p.vy = -JUMP; p.grounded = false; buffer = 0;
+      }
+      if (frame % 3 === 0) {
+        particles.push({ x: px + 2, y: p.y + T - 4, vx: -1.5, vy: -Math.random() * 1.5, life: 18, size: 5 });
+      }
+    } else {
+      p.rot += Math.PI / 30;
+    }
+    if (buffer > 0) buffer--;
+
+    if (dist >= endX) win();
+  }
+
+  // ---------- Drawing ----------
+  function beatPulse() {
+    return music.pulse();
+  }
+
+  function draw() {
+    const hue = level ? level.hue + (level.chunks === Infinity ? dist / 80 : 0) : 215;
+    const cam = (dist || 0) - PX;
+    const pulse = beatPulse();
+
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, `hsl(${hue}, 70%, ${22 + pulse * 6}%)`);
+    g.addColorStop(1, `hsl(${hue + 30}, 70%, 8%)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // Parallax squares
+    ctx.strokeStyle = `hsla(${hue}, 80%, 70%, 0.12)`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 12; i++) {
+      const size = 60 + (i % 4) * 30;
+      const x = ((i * 173 - cam * 0.2) % (W + 200) + W + 200) % (W + 200) - 100;
+      const y = 40 + ((i * 97) % 260);
+      ctx.strokeRect(x, y, size, size);
+    }
+
+    if (!level) return;
+
+    // Ground
+    ctx.fillStyle = `hsl(${hue}, 60%, 14%)`;
+    ctx.fillRect(0, GROUND, W, H - GROUND);
+    ctx.strokeStyle = `hsla(${hue}, 60%, 60%, 0.25)`;
+    for (let x = -((cam % 80) + 80) % 80; x < W; x += 80) {
+      ctx.strokeRect(x, GROUND, 80, 80);
+    }
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, GROUND - 1, W, 3);
+
+    // Objects
+    for (const o of objs) {
+      const x = o.x - cam;
+      if (x > W || x + o.w < 0) continue;
+      if (o.t === 'block') {
+        ctx.fillStyle = `hsl(${hue}, 50%, 10%)`;
+        ctx.fillRect(x, o.y, o.w, o.h);
+        ctx.strokeStyle = `hsl(${hue}, 90%, 75%)`;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 1, o.y + 1, o.w - 2, o.h - 2);
+        ctx.strokeStyle = `hsla(${hue}, 90%, 75%, 0.3)`;
+        ctx.strokeRect(x + 9, o.y + 9, o.w - 18, o.h - 18);
+      } else if (o.t === 'spike') {
+        ctx.beginPath();
+        ctx.moveTo(x + 2, o.y + T);
+        ctx.lineTo(x + T / 2, o.y + 2);
+        ctx.lineTo(x + T - 2, o.y + T);
+        ctx.closePath();
+        ctx.fillStyle = '#0a0a12';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      } else if (o.t === 'pad') {
+        ctx.fillStyle = '#ffe14d';
+        ctx.beginPath();
+        ctx.ellipse(x + T / 2, o.y + 8, T / 2 - 2, 8, 0, Math.PI, 0);
+        ctx.fill();
+      } else if (o.t === 'orb') {
+        const r = 13 + Math.sin(frame / 6) * 2;
+        ctx.beginPath();
+        ctx.arc(x + T / 2, o.y + T / 2, r + 6, 0, Math.PI * 2);
+        ctx.strokeStyle = o.used ? 'rgba(255,225,77,.25)' : '#fff6b0';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x + T / 2, o.y + T / 2, r - 2, 0, Math.PI * 2);
+        ctx.fillStyle = o.used ? 'rgba(255,225,77,.25)' : '#ffe14d';
+        ctx.fill();
+      }
+    }
+
+    // Finish line
+    if (endX !== Infinity && endX - cam < W + 40) {
+      const x = endX - cam + T;
+      for (let y = 0; y < GROUND; y += 20) {
+        ctx.fillStyle = (y / 20) % 2 ? '#fff' : '#111';
+        ctx.fillRect(x, y, 10, 20);
+        ctx.fillStyle = (y / 20) % 2 ? '#111' : '#fff';
+        ctx.fillRect(x + 10, y, 10, 20);
+      }
+    }
+
+    // Particles
+    for (const q of particles) {
+      ctx.globalAlpha = Math.max(0, q.life / 40);
+      ctx.fillStyle = q.orb ? '#ffe14d' : `hsl(${hue + 180}, 100%, 70%)`;
+      ctx.fillRect(q.x - cam - q.size / 2, q.y - q.size / 2, q.size, q.size);
+    }
+    ctx.globalAlpha = 1;
+
+    // Player cube
+    if (!dead) {
+      ctx.save();
+      ctx.translate(PX + T / 2, p.y + T / 2);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = '#7dff5e';
+      ctx.fillRect(-T / 2, -T / 2, T, T);
+      ctx.fillStyle = '#2fd1ff';
+      ctx.fillRect(-T / 2 + 8, -T / 2 + 8, T - 16, T - 16);
+      ctx.fillStyle = '#0a0a12';
+      ctx.fillRect(-9, -7, 6, 6);
+      ctx.fillRect(3, -7, 6, 6);
+      ctx.fillRect(-8, 4, 16, 4);
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(-T / 2 + 1.5, -T / 2 + 1.5, T - 3, T - 3);
+      ctx.restore();
+    }
+
+    // HUD
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    if (endX !== Infinity) {
+      const pr = progress();
+      ctx.fillStyle = 'rgba(0,0,0,.4)';
+      ctx.fillRect(W / 2 - 150, 14, 300, 12);
+      ctx.fillStyle = '#7dff5e';
+      ctx.fillRect(W / 2 - 150, 14, 300 * pr, 12);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(Math.floor(pr * 100) + '%', W / 2 + 180, 26);
+    } else {
+      ctx.fillText(Math.floor(dist / T) + ' m', W / 2, 28);
+    }
+    if (dist < 400 && !dead) {
+      ctx.font = 'bold 28px system-ui, sans-serif';
+      ctx.globalAlpha = 1 - dist / 400;
+      ctx.fillText('Attempt ' + attempt, W / 2 + 80 - dist, 150);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // ---------- Procedural soundtrack ----------
+  const music = (() => {
+    const BPM = 128, SPB = 60 / BPM / 2; // eighth notes
+    const bass = [45, 45, 57, 45, 48, 48, 60, 48, 43, 43, 55, 43, 40, 40, 52, 47];
+    const lead = [69, 0, 72, 76, 0, 74, 72, 0, 67, 0, 71, 74, 0, 72, 71, 67];
+    let timer = null, next = 0, idx = 0, t0 = 0;
+    const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
+
+    function note(ac, freq, t, dur, type, vol) {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(ac.destination);
+      o.start(t); o.stop(t + dur + 0.02);
+    }
+    function kick(ac, t) {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.setValueAtTime(150, t);
+      o.frequency.exponentialRampToValueAtTime(40, t + 0.12);
+      g.gain.setValueAtTime(0.35, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+      o.connect(g).connect(ac.destination);
+      o.start(t); o.stop(t + 0.16);
+    }
+    function schedule() {
+      const ac = Arcade._ac;
+      if (!ac || Arcade.muted) return;
+      while (next < ac.currentTime + 0.12) {
+        const i = idx % 16;
+        if (i % 2 === 0) kick(ac, next);
+        note(ac, midi(bass[i]), next, SPB * 0.9, 'sawtooth', 0.035);
+        if (lead[i] && (!level || level.stars !== 1 || i % 4 === 0)) {
+          note(ac, midi(lead[i]), next, SPB * 0.8, 'square', 0.025);
+        }
+        next += SPB; idx++;
+      }
+    }
+    return {
+      start() {
+        const ac = Arcade.audio();
+        if (!ac) return;
+        this.stop();
+        idx = 0; next = ac.currentTime + 0.05; t0 = next;
+        timer = setInterval(schedule, 25);
+      },
+      stop() { if (timer) clearInterval(timer); timer = null; },
+      pulse() {
+        const ac = Arcade._ac;
+        if (!timer || !ac || Arcade.muted) return 0;
+        const beat = ((ac.currentTime - t0) / (SPB * 2)) % 1;
+        return Math.max(0, 1 - beat * 3);
+      },
+    };
+  })();
+
+  // ---------- Input ----------
+  function press() {
+    if (!running) return;
+    held = true; buffer = 7;
+  }
+  function release() { held = false; }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') press();
+    if (e.key === 'Escape') showMenu();
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') release();
+  });
+  cv.addEventListener('mousedown', press);
+  window.addEventListener('mouseup', release);
+  cv.addEventListener('touchstart', (e) => { e.preventDefault(); press(); }, { passive: false });
+  cv.addEventListener('touchend', release);
+
+  function showMenu() {
+    running = false;
+    music.stop();
+    const box = document.getElementById('levels');
+    box.innerHTML = '';
+    LEVELS.forEach((lv) => {
+      const b = document.createElement('button');
+      b.className = 'btn' + (lv.stars === 1 ? ' primary' : '');
+      const best = lv.chunks === Infinity
+        ? Arcade.get('cubedash_endless_best', 0) + ' m'
+        : Arcade.get('cubedash_' + lv.id + '_best', 0) + '%';
+      b.innerHTML = `${lv.name} ${'★'.repeat(lv.stars)}<br><small style="opacity:.75">Best: ${best}</small>`;
+      b.style.flexDirection = 'column';
+      b.style.height = 'auto';
+      b.style.padding = '10px 16px';
+      b.addEventListener('click', () => { Arcade.audio(); start(lv); });
+      box.appendChild(b);
+    });
+    document.getElementById('done').classList.add('hidden');
+    document.getElementById('menu').classList.remove('hidden');
+  }
+
+  document.getElementById('again').addEventListener('click', () => start(level));
+  document.getElementById('toMenu').addEventListener('click', showMenu);
+
+  // ---------- Main loop (fixed 60 Hz timestep) ----------
+  let last = performance.now(), acc = 0;
+  function loop(now) {
+    acc += Math.min(100, now - last);
+    last = now;
+    while (acc >= 1000 / 60) {
+      if (running) step();
+      acc -= 1000 / 60;
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  showMenu();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

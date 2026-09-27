@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neon Slope</title>
+<link rel="stylesheet" href="../assets/game.css">
+</head>
+<body>
+<header class="bar">
+  <a class="back" href="../index.html">← Arcade</a>
+  <h1>Neon Slope</h1>
+  <div class="stats"><span>Score <b id="score">0</b></span><span>Best <b id="best">0</b></span></div>
+  <button class="btn" id="mute" title="Sound on/off">🔊</button>
+</header>
+
+<main class="stage">
+  <div class="wrap">
+    <canvas class="game" id="c" width="800" height="500"></canvas>
+    <div class="overlay" id="ov">
+      <h2 id="ovTitle">Neon Slope</h2>
+      <p id="ovText">Roll as far as you can. Don't fall off and dodge the red blocks.</p>
+      <button class="btn primary" id="go">Play</button>
+    </div>
+  </div>
+</main>
+
+<p class="help">
+  Steer with <kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd>. On a touchscreen, hold the left or right half of the screen.
+  The track keeps getting faster.
+</p>
+
+<script src="../assets/common.js"></script>
+<script>
+(() => {
+  Arcade.preventScroll();
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const W = 800, H = 500;
+  const LANES = 5, LW = 1.2, HALF = (LANES * LW) / 2;
+  const F = 360, HORIZON = 150, CAM_H = 1.6, CAM_BACK = 3.2, VIEW = 70, BALL_R = 0.32;
+
+  let rows, genZ, safe, rand;
+  let z, speed, bx, bvx, fallY, fallV, state = 'menu', score, crashT;
+  let left = false, right = false;
+  const scoreEl = document.getElementById('score');
+  const bestEl = document.getElementById('best');
+  bestEl.textContent = Arcade.get('slope_best', 0);
+
+  const curve = (zz) => 3.2 * Math.sin(zz * 0.035) + 2.2 * Math.sin(zz * 0.013 + 1);
+
+  // ---- Track generation: every "feature" keeps at least one safe lane that drifts by ≤1 ----
+  function genUntil(target) {
+    while (genZ < target) {
+      const diff = Math.min(1, genZ / 1500);
+      if (genZ < 40) { pushRow([1, 1, 1, 1, 1]); continue; }
+      const roll = rand();
+      if (roll < 0.35) {
+        for (let i = 0; i < 4 + Math.floor(rand() * 6); i++) pushRow([1, 1, 1, 1, 1]);
+      } else if (roll < 0.65) {
+        // Holes: only the safe lane (and maybe a neighbour) stays solid.
+        const len = 3 + Math.floor(rand() * (3 + diff * 5));
+        const keepNeighbour = rand() > diff * 0.7;
+        const nb = safe + (rand() < 0.5 ? -1 : 1);
+        for (let i = 0; i < len; i++) {
+          const r = [0, 0, 0, 0, 0];
+          r[safe] = 1;
+          if (keepNeighbour && nb >= 0 && nb < LANES) r[nb] = 1;
+          // A few random extra floor tiles so it isn't too sparse.
+          for (let l = 0; l < LANES; l++) if (rand() < 0.25 * (1 - diff)) r[l] = 1;
+          pushRow(r);
+        }
+        for (let i = 0; i < 3 + Math.floor(diff * 5); i++) pushRow([1, 1, 1, 1, 1]);
+      } else if (roll < 0.9) {
+        // A wall of blocks with gaps.
+        const r = [1, 1, 1, 1, 1];
+        for (let l = 0; l < LANES; l++) if (l !== safe && rand() < 0.45 + diff * 0.35) r[l] = 2;
+        pushRow(r);
+        for (let i = 0; i < 5 + Math.floor(diff * 5); i++) pushRow([1, 1, 1, 1, 1]);
+      } else {
+        // Narrow bridge.
+        const len = 6 + Math.floor(rand() * 8);
+        for (let i = 0; i < len; i++) {
+          const r = [0, 0, 0, 0, 0];
+          r[safe] = 1;
+          pushRow(r);
+        }
+        for (let i = 0; i < 2 + Math.floor(diff * 4); i++) pushRow([1, 1, 1, 1, 1]);
+      }
+      if (rand() < 0.6) safe = Math.max(0, Math.min(LANES - 1, safe + (rand() < 0.5 ? -1 : 1)));
+    }
+  }
+  function pushRow(r) { rows[genZ++] = r; }
+
+  function reset() {
+    rows = {};
+    genZ = 0; safe = 2;
+    const seed = (Date.now() & 0xffffff) || 1;
+    let s = seed;
+    rand = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+    z = 0; speed = 11; bx = 0; bvx = 0; fallY = 0; fallV = 0; score = 0; crashT = 0;
+    genUntil(VIEW + 20);
+  }
+
+  function tile(zi, lane) {
+    const r = rows[zi];
+    if (!r || lane < 0 || lane >= LANES) return 0;
+    return r[lane];
+  }
+
+  function gameOver() {
+    state = 'over';
+    const best = Arcade.best('slope', score);
+    bestEl.textContent = best;
+    document.getElementById('ovTitle').textContent = 'Game Over';
+    document.getElementById('ovText').textContent = `Score ${score} · Best ${best}`;
+    document.getElementById('go').textContent = 'Play again';
+    document.getElementById('ov').classList.remove('hidden');
+  }
+
+  function update(dt) {
+    if (state === 'play' || state === 'falling') {
+      z += speed * dt;
+      genUntil(Math.floor(z) + VIEW + 20);
+      // Drop rows far behind.
+      for (const k in rows) if (k < z - 10) delete rows[k];
+    }
+    if (state === 'play') {
+      speed = Math.min(34, 11 + z / 90);
+      const target = (right ? 1 : 0) - (left ? 1 : 0);
+      bvx += (target * 10 - bvx) * Math.min(1, dt * 10);
+      bx += bvx * dt;
+      score = Math.floor(z);
+      scoreEl.textContent = score;
+
+      const zi = Math.floor(z), frac = z - zi;
+      if (Math.abs(bx) > HALF) { state = 'falling'; Arcade.beep(300, 0.5, 'sine', 0.1, -250); return; }
+      const lane = Math.floor((bx + HALF) / LW);
+      if (tile(zi, lane) === 0) { state = 'falling'; Arcade.beep(300, 0.5, 'sine', 0.1, -250); return; }
+      // Blocks sit between frac 0.25 and 0.75 of their row.
+      const lanesTouched = [Math.floor((bx - BALL_R + HALF) / LW), Math.floor((bx + BALL_R + HALF) / LW)];
+      for (const l of lanesTouched) {
+        if (tile(zi, l) === 2 && frac > 0.25 - BALL_R && frac < 0.75 + BALL_R) {
+          state = 'crash'; crashT = 0.6; Arcade.noise(0.3, 0.2);
+          return;
+        }
+      }
+    } else if (state === 'falling') {
+      fallV += 18 * dt;
+      fallY -= fallV * dt;
+      bx += bvx * dt;
+      if (fallY < -6) gameOver();
+    } else if (state === 'crash') {
+      crashT -= dt;
+      if (crashT <= 0) gameOver();
+    }
+  }
+
+  // ---- Rendering ----
+  function project(x, y, zz, camX, camZ) {
+    const dz = zz - camZ;
+    return [W / 2 + ((x - camX) * F) / dz, HORIZON + ((CAM_H - y) * F) / dz, dz];
+  }
+
+  let camX = 0;
+  function draw() {
+    const hue = (z * 0.6) % 360;
+    ctx.fillStyle = '#04040a';
+    ctx.fillRect(0, 0, W, H);
+
+    // Stars / speed streaks
+    for (let i = 0; i < 60; i++) {
+      const sx = (i * 137.5) % W;
+      const sy = ((i * 71) % HORIZON) + ((z * 4 * (1 + (i % 3))) % 40) - 20;
+      ctx.fillStyle = `hsla(${hue + i * 3}, 90%, 70%, .35)`;
+      ctx.fillRect(sx, sy, 2, 2);
+    }
+    // Horizon glow
+    const g = ctx.createLinearGradient(0, HORIZON - 80, 0, HORIZON + 40);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, `hsla(${hue}, 90%, 40%, .35)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, HORIZON - 80, W, 120);
+
+    const camZ = z - CAM_BACK;
+    const ballWorldX = curve(z) + bx;
+    camX += (ballWorldX - camX) * 0.15;
+
+    const zStart = Math.floor(camZ) + 1;
+    const zEnd = zStart + VIEW;
+    ctx.lineWidth = 1.5;
+    for (let zi = zEnd; zi >= zStart; zi--) {
+      const r = rows[zi];
+      if (!r) continue;
+      const z0 = Math.max(zi, camZ + 0.4), z1 = zi + 1;
+      if (z1 <= z0) continue;
+      const fade = Math.max(0.15, 1 - (zi - z) / VIEW);
+      for (let l = 0; l < LANES; l++) {
+        if (!r[l]) continue;
+        const xl0 = curve(z0) - HALF + l * LW, xl1 = curve(z1) - HALF + l * LW;
+        const a = project(xl0, 0, z0, camX, camZ), b = project(xl0 + LW, 0, z0, camX, camZ);
+        const c = project(xl1 + LW, 0, z1, camX, camZ), d = project(xl1, 0, z1, camX, camZ);
+        ctx.beginPath();
+        ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(d[0], d[1]);
+        ctx.closePath();
+        ctx.fillStyle = `hsla(${hue + 140}, 60%, ${6 + fade * 6}%, 1)`;
+        ctx.fill();
+        ctx.strokeStyle = `hsla(${hue + 140}, 100%, 60%, ${fade})`;
+        ctx.stroke();
+
+        if (r[l] === 2) {
+          const bz0 = zi + 0.25, bz1 = zi + 0.75;
+          if (bz0 <= camZ + 0.4) continue;
+          const cx0 = curve(bz0) - HALF + l * LW + 0.1, cx1 = curve(bz1) - HALF + l * LW + 0.1;
+          const h = 0.9, bw = LW - 0.2;
+          const f1 = project(cx0, 0, bz0, camX, camZ), f2 = project(cx0 + bw, 0, bz0, camX, camZ);
+          const f3 = project(cx0 + bw, h, bz0, camX, camZ), f4 = project(cx0, h, bz0, camX, camZ);
+          const t3 = project(cx1 + bw, h, bz1, camX, camZ), t4 = project(cx1, h, bz1, camX, camZ);
+          ctx.fillStyle = `rgba(255, 40, 80, ${0.35 + fade * 0.5})`;
+          ctx.beginPath();
+          ctx.moveTo(f4[0], f4[1]); ctx.lineTo(f3[0], f3[1]); ctx.lineTo(t3[0], t3[1]); ctx.lineTo(t4[0], t4[1]);
+          ctx.closePath(); ctx.fill();
+          ctx.fillStyle = `rgba(200, 10, 50, ${0.5 + fade * 0.5})`;
+          ctx.fillRect(f1[0], f4[1], f2[0] - f1[0], f1[1] - f4[1]);
+          ctx.strokeStyle = `rgba(255,120,150,${fade})`;
+          ctx.strokeRect(f1[0], f4[1], f2[0] - f1[0], f1[1] - f4[1]);
+        }
+      }
+    }
+
+    // Ball
+    if (state !== 'menu') {
+      const bp = project(ballWorldX, BALL_R + fallY, z, camX, camZ);
+      const rad = (BALL_R * F) / bp[2];
+      if (state === 'crash') {
+        ctx.fillStyle = `rgba(255,80,120,${crashT})`;
+        for (let i = 0; i < 10; i++) {
+          const a = i * 0.63, d = (0.6 - crashT) * 160;
+          ctx.fillRect(bp[0] + Math.cos(a) * d, bp[1] + Math.sin(a) * d, 6, 6);
+        }
+      } else {
+        const bg = ctx.createRadialGradient(bp[0] - rad / 3, bp[1] - rad / 3, 2, bp[0], bp[1], rad);
+        bg.addColorStop(0, '#fff');
+        bg.addColorStop(1, `hsl(${hue + 140}, 100%, 50%)`);
+        ctx.fillStyle = bg;
+        ctx.beginPath();
+        ctx.arc(bp[0], bp[1], rad, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    if (state === 'play') {
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.fillText(`${Math.round(speed * 3.6)} km/h`, 14, H - 14);
+    }
+  }
+
+  // ---- Input ----
+  const setKey = (e, v) => {
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') left = v;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') right = v;
+    if (v && (e.key === ' ' || e.key === 'Enter') && state !== 'play' && state !== 'falling' && state !== 'crash') begin();
+  };
+  window.addEventListener('keydown', (e) => setKey(e, true));
+  window.addEventListener('keyup', (e) => setKey(e, false));
+  function touch(e) {
+    e.preventDefault();
+    left = right = false;
+    for (const t of e.touches) {
+      const r = cv.getBoundingClientRect();
+      if (t.clientX - r.left < r.width / 2) left = true; else right = true;
+    }
+  }
+  cv.addEventListener('touchstart', touch, { passive: false });
+  cv.addEventListener('touchmove', touch, { passive: false });
+  cv.addEventListener('touchend', touch, { passive: false });
+
+  function begin() {
+    reset();
+    state = 'play';
+    Arcade.audio();
+    document.getElementById('ov').classList.add('hidden');
+  }
+  document.getElementById('go').addEventListener('click', begin);
+
+  reset();
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Morgan Academy Arcade</title>
+<meta name="description" content="A self-contained arcade of browser games. Every game runs locally with no outside websites.">
+<link rel="stylesheet" href="assets/game.css">
+<style>
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(1000px 500px at 10% -10%, rgba(94, 231, 255, .14), transparent 60%),
+      radial-gradient(800px 500px at 100% 0%, rgba(255, 94, 200, .12), transparent 60%),
+      var(--bg);
+  }
+  .hero {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 48px 16px 20px;
+  }
+  .hero h1 {
+    font-size: clamp(34px, 6vw, 60px);
+    line-height: 1.02;
+    margin: 0 0 12px;
+    letter-spacing: -1px;
+  }
+  .hero h1 span {
+    background: linear-gradient(90deg, var(--accent), #9d8bff, var(--accent2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .hero p { color: var(--muted); font-size: 17px; max-width: 620px; margin: 0; line-height: 1.5; }
+  .tools {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .search {
+    flex: 1 1 220px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 12px;
+    padding: 11px 14px;
+    font: inherit;
+    font-size: 15px;
+    outline: none;
+  }
+  .search:focus { border-color: var(--accent); }
+  .chip {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 8px 14px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .chip.on { color: #0b0d17; background: var(--accent); border-color: var(--accent); }
+  .grid {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 8px 16px 40px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    overflow: hidden;
+    color: inherit;
+    text-decoration: none;
+    transition: transform .15s, border-color .15s, box-shadow .15s;
+  }
+  .card:hover, .card:focus-visible {
+    transform: translateY(-4px);
+    border-color: var(--accent);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .4);
+    outline: none;
+  }
+  .thumb { aspect-ratio: 16 / 9; display: block; width: 100%; }
+  .body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 4px; }
+  .body h2 { margin: 0; font-size: 18px; }
+  .like { color: var(--muted); font-size: 13px; }
+  .meta { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+  .tag {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: #20274a;
+    color: var(--accent);
+  }
+  .best { font-size: 12px; color: var(--muted); }
+  .featured { grid-column: span 2; }
+  .featured .thumb { aspect-ratio: 32 / 9; }
+  @media (max-width: 560px) { .featured { grid-column: span 1; } .featured .thumb { aspect-ratio: 16 / 9; } }
+  .empty { color: var(--muted); padding: 20px 16px; text-align: center; grid-column: 1 / -1; }
+  footer { color: var(--muted); font-size: 13px; text-align: center; padding: 0 16px 32px; }
+</style>
+</head>
+<body>
+  <section class="hero">
+    <h1>Morgan Academy <span>Arcade</span></h1>
+    <p>Browser games in the style of Geometry Dash, Slope, Tetris, 2048, Crossy Road, and more.
+      All the code is included here, so the games load no outside game sites. They work offline, and even straight from a USB stick.</p>
+  </section>
+
+  <div class="tools">
+    <input class="search" id="q" type="search" placeholder="Search games…" aria-label="Search games">
+    <div id="chips" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+  </div>
+
+  <main class="grid" id="grid"></main>
+
+  <footer>Best scores save on this computer only. Built for Morgan Academy.</footer>
+
+<script src="assets/common.js"></script>
+<script>
+(() => {
+  // Thumbnails are inline SVG so no image files or network requests are needed.
+  const ART = {
+    cube: `<svg viewBox="0 0 320 180" class="thumb" aria-hidden="true"><defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a2a9e"/><stop offset="1" stop-color="#0b0a2a"/></linearGradient></defs><rect width="320" height="180" fill="url(#g1)"/><rect x="40" y="30" width="50" height="50" fill="none" stroke="#8e8bff" stroke-opacity=".3" stroke-width="2"/><rect x="220" y="20" width="70" height="70" fill="none" stroke="#8e8bff" stroke-opacity=".3" stroke-width="2"/><rect y="140" width="320" height="40" fill="#1b1550"/><rect y="139" width="320" height="3" fill="#fff"/><rect x="70" y="92" width="34" height="34" fill="#7dff5e" stroke="#000" stroke-width="3" transform="rotate(-20 87 109)"/><rect x="78" y="100" width="18" height="18" fill="#2fd1ff" transform="rotate(-20 87 109)"/><path d="M150 140 L166 110 L182 140Z M182 140 L198 110 L214 140Z" fill="#0a0a12" stroke="#fff" stroke-width="2"/><rect x="240" y="106" width="34" height="34" fill="#140f3a" stroke="#b6b3ff" stroke-width="2"/><rect x="274" y="72" width="34" height="68" fill="#140f3a" stroke="#b6b3ff" stroke-width="2"/></svg>`,
+    slope: `<svg viewBox="0 0 320 180" class="thumb" aria-hidden="true"><rect width="320" height="180" fill="#04040a"/><g stroke="#28ff9e" stroke-width="1.5" fill="#062014"><path d="M150 50 L170 50 L230 180 L90 180Z"/><path d="M130 50 L150 50 L90 180 L20 180Z" opacity=".6"/><path d="M170 50 L190 50 L300 180 L230 180Z" opacity=".6"/></g><path d="M160 50 V180 M140 70 H180 M125 100 H195 M105 140 H215" stroke="#28ff9e" stroke-opacity=".5"/><rect x="176" y="98" width="30" height="22" fill="#e0103f" stroke="#ff7896"/><circle cx="150" cy="142" r="15" fill="#28ff9e"/><circle cx="145" cy="137" r="5" fill="#fff" opacity=".8"/></svg>`,
+    tetris: `<svg viewBox="0 0 320 180" class="thumb" aria-hidden="true"><rect width="320" height="180" fill="#0d1022"/><g stroke="#0d1022" stroke-width="2"><rect x="100" y="150" width="20" height="20" fill="#3ee6ff"/><rect x="120" y="150" width="20" height="20" fill="#3ee6ff"/><rect x="140" y="150" width="20" height="20" fill="#3ee6ff"/><rect x="160" y="150" width="20" height="20" fill="#3ee6ff"/><rect x="180" y="150" width="20" height="20" fill="#ffe14d"/><rect x="200" y="150" width="20" height="20" fill="#ffe14d"/><rect x="180" y="130" width="20" height="20" fill="#ffe14d"/><rect x="200" y="130" width="20" height="20" fill="#ffe14d"/><rect x="100" y="130" width="20" height="20" fill="#ff4f6b"/><rect x="120" y="130" width="20" height="20" fill="#ff4f6b"/><rect x="120" y="110" width="20" height="20" fill="#5eff8a"/><rect x="140" y="130" width="20" height="20" fill="#c86bff"/><rect x="160" y="130" width="20" height="20" fill="#c86bff"/><rect x="150" y="30" width="20" height="20" fill="#ff9f3e"/><rect x="150" y="50" width="20" height="20" fill="#ff9f3e"/><rect x="170" y="50" width="20" height="20" fill="#ff9f3e"/><rect x="190" y="50" width="20" height="20" fill="#ff9f3e"/></g><rect x="98" y="0" width="2" height="180" fill="#262d4a"/><rect x="220" y="0" width="2" height="180" fill="#262d4a"/></svg>`,
+    t2048: `<svg viewBox="0 0 320 180" class="thumb" aria-hidden="true"><rect width="320" height="180" fill="#151a2e"/><g font-family="system-ui,sans-serif" font-weight="800" text-anchor="middle"><rect x="70" y="20" width="60" height="60" rx="8" fill="#ffb86b"/><text x="100" y="60" font-size="24" fill="#0b0d17">8</text><rect x="135" y="20" width="60" height="60" rx="8" fill="#ff7258"/><text x="165" y="60" font-size="24" fill="#0b0d17">32</text><rect x="200" y="20" width="60" height="60" rx="8" fill="#262d52"/><rect x="70" y="85" width="60" height="60" rx="8" fill="#262d52"/><rect x="135" y="85" width="60" height="60" rx="8" fill="#ffd84d"/><text x="165" y="124" font-size="20" fill="#0b0d17">256</text><rect x="200" y="85" width="60" height="60" rx="8" fill="#5ee7ff"/><text x="230" y="123" font-size="16" fill="#0b0d17">2048</text></g></svg>`,
+    flappy: `<svg viewBox="0 0 320 180" class="thumb" aria-hidden="true"><defs><linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4ec0ff"/><stop offset="1" stop-color="#bff0ff"/></linearGradient></defs><rect width="320" height="180" fill="url(#g2)"/><rect x="200" y="0" width="44" height="60" fill="#5ed156" stroke="#1b5e20" stroke-width="2"/><rect x="195" y="44" width="54" height="16" fill="#5ed156" stroke="#1b5e20" stroke-width="2"/><rect x="200" y="120" width="44" height="50" fill="#5ed156" stroke="#1b5e20" stroke-width="2"/><rect x="195" y="120" width="54" height="16" fill="#5ed156" stroke="#1b5e20" stroke-width="2"/><rect y="160" width="320" height="20" fill="#73bf2e"/><ellipse cx="110" cy="92" rx="18" ry="14" fill="#ffd23f" stroke="#6b4b00" stroke-width="2"/><circle cx="117" cy="87" r="6" fill="#fff" stroke="#6b4b00" stroke-width="2"/><circle cx="119" cy="87" r="2.5"/><path d="M122 93 L134 96 L122 100Z" fill="#ff7a2e" stroke="#6b4b00" stroke-width="2"/><ellipse cx="103" cy="95" rx="9" ry="5" fill="#fff3c4" stroke="#6b4b00" stroke-width="2"/></svg>`,
+    snake: `<svg viewBox="0 0 320 180" class="thumb" aria-hidden="true"><rect width="320" height="180" fill="#0f1a14"/><g fill="#48d17a"><rect x="60" y="80" width="18" height="18" rx="5"/><rect x="80" y="80" width="18" height="18" rx="5"/><rect x="100" y="80" width="18" height="18" rx="5"/><rect x="120" y="80" width="18" height="18" rx="5"/><rect x="120" y="60" width="18" height="18" rx="5"/><rect x="140" y="60" width="18" height="18" rx="5"/><rect x="160" y="60" width="18" height="18" rx="5"/><rect x="180" y="60" width="18" height="18" rx="5" fill="#5eff8a"/></g><circle cx="192" cy="65" r="2"/><circle cx="192" cy="73" r="2"/><circle cx="240" cy="70" r="9" fill="#ff4f5e"/><rect x="239" y="58" width="3" height="6" fill="#5eff8a"/></svg>`,
+    crossy: `<svg viewBox="0 0 320 180" class="thumb" aria-hidden="true"><rect width="320" height="36" fill="#8ee35b"/><rect y="36" width="320" height="36" fill="#4dabf7"/><rect x="30" y="42" width="110" height="24" fill="#8d5a2b"/><rect x="200" y="42" width="90" height="24" fill="#8d5a2b"/><rect y="72" width="320" height="72" fill="#3b3f4a"/><rect x="20" y="106" width="30" height="3" fill="#6b7080"/><rect x="100" y="106" width="30" height="3" fill="#6b7080"/><rect x="180" y="106" width="30" height="3" fill="#6b7080"/><rect x="260" y="106" width="30" height="3" fill="#6b7080"/><rect x="60" y="78" width="60" height="22" fill="#ff4f5e"/><rect x="200" y="116" width="90" height="22" fill="#4f7bff"/><rect y="144" width="320" height="36" fill="#82d652"/><rect x="146" y="148" width="26" height="28" fill="#fff"/><rect x="154" y="143" width="10" height="6" fill="#ff4f5e"/><rect x="155" y="160" width="8" height="5" fill="#ffa94d"/><rect x="40" y="6" width="30" height="24" fill="#2f9e44"/></svg>`,
+    cookie: `<svg viewBox="0 0 320 180" class="thumb" aria-hidden="true"><defs><radialGradient id="g3" cx=".4" cy=".4"><stop offset="0" stop-color="#f3c07a"/><stop offset=".7" stop-color="#d08a3c"/><stop offset="1" stop-color="#a8631f"/></radialGradient></defs><rect width="320" height="180" fill="#2a1a3e"/><circle cx="160" cy="90" r="62" fill="url(#g3)"/><g fill="#5b3413"><circle cx="138" cy="70" r="7"/><circle cx="178" cy="64" r="6"/><circle cx="186" cy="100" r="8"/><circle cx="148" cy="112" r="7"/><circle cx="162" cy="88" r="5"/></g><text x="230" y="60" font-family="system-ui" font-weight="800" font-size="18" fill="#fff">+1</text><text x="70" y="140" font-family="system-ui" font-weight="800" font-size="16" fill="#ffd23f">+12</text></svg>`,
+    stack: `<svg viewBox="0 0 320 180" class="thumb" aria-hidden="true"><rect width="320" height="180" fill="#1f2a3e"/><g><rect x="110" y="150" width="100" height="18" fill="hsl(200,70%,60%)"/><rect x="112" y="132" width="96" height="18" fill="hsl(215,70%,60%)"/><rect x="118" y="114" width="90" height="18" fill="hsl(230,70%,60%)"/><rect x="118" y="96" width="84" height="18" fill="hsl(245,70%,60%)"/><rect x="124" y="78" width="78" height="18" fill="hsl(260,70%,60%)"/><rect x="170" y="50" width="78" height="18" fill="hsl(275,70%,62%)"/><rect x="202" y="92" width="10" height="16" fill="hsl(245,70%,50%)" transform="rotate(20 207 100)"/></g><text x="160" y="36" text-anchor="middle" font-family="system-ui" font-weight="900" font-size="28" fill="#fff">5</text></svg>`,
+    mines: `<svg viewBox="0 0 320 180" class="thumb" aria-hidden="true"><rect width="320" height="180" fill="#1c2242"/><g font-family="system-ui" font-weight="800" font-size="16" text-anchor="middle"><rect x="85" y="25" width="34" height="34" rx="4" fill="#151a2e"/><text x="102" y="48" fill="#5ea8ff">1</text><rect x="123" y="25" width="34" height="34" rx="4" fill="#151a2e"/><text x="140" y="48" fill="#5eff8a">2</text><rect x="161" y="25" width="34" height="34" rx="4" fill="#3a4478"/><rect x="199" y="25" width="34" height="34" rx="4" fill="#3a4478"/><rect x="85" y="63" width="34" height="34" rx="4" fill="#151a2e"/><rect x="123" y="63" width="34" height="34" rx="4" fill="#151a2e"/><text x="140" y="86" fill="#ff6b6b">3</text><rect x="161" y="63" width="34" height="34" rx="4" fill="#3a4478"/><text x="178" y="86">🚩</text><rect x="199" y="63" width="34" height="34" rx="4" fill="#3a4478"/><rect x="85" y="101" width="34" height="34" rx="4" fill="#151a2e"/><rect x="123" y="101" width="34" height="34" rx="4" fill="#151a2e"/><text x="140" y="124" fill="#5ea8ff">1</text><rect x="161" y="101" width="34" height="34" rx="4" fill="#ff4f5e"/><text x="178" y="124">💣</text><rect x="199" y="101" width="34" height="34" rx="4" fill="#3a4478"/></g></svg>`,
+    bricks: `<svg viewBox="0 0 320 180" class="thumb" aria-hidden="true"><rect width="320" height="180" fill="#0d1030"/><g><rect x="20" y="20" width="52" height="14" fill="#ff4f5e"/><rect x="76" y="20" width="52" height="14" fill="#ff4f5e"/><rect x="132" y="20" width="52" height="14" fill="#ff4f5e"/><rect x="188" y="20" width="52" height="14" fill="#ff4f5e"/><rect x="244" y="20" width="52" height="14" fill="#ff4f5e"/><rect x="20" y="38" width="52" height="14" fill="#ffd23f"/><rect x="132" y="38" width="52" height="14" fill="#ffd23f"/><rect x="188" y="38" width="52" height="14" fill="#ffd23f"/><rect x="244" y="38" width="52" height="14" fill="#ffd23f"/><rect x="20" y="56" width="52" height="14" fill="#3ee6ff"/><rect x="76" y="56" width="52" height="14" fill="#3ee6ff"/><rect x="244" y="56" width="52" height="14" fill="#3ee6ff"/></g><circle cx="150" cy="120" r="6" fill="#fff"/><rect x="118" y="156" width="80" height="10" rx="5" fill="#b8c0ff"/></svg>`,
+  };
+
+  const GAMES = [
+    { file: 'cube-dash', title: 'Cube Dash', like: 'Geometry Dash', tag: 'Reflex', art: 'cube', best: () => Arcade.get('cubedash_endless_best', 0) + ' m endless', featured: true },
+    { file: 'neon-slope', title: 'Neon Slope', like: 'Slope / Tunnel Rush', tag: 'Reflex', art: 'slope', best: () => Arcade.get('slope_best', 0) },
+    { file: 'block-stack', title: 'Block Stack', like: 'Tetris', tag: 'Puzzle', art: 'tetris', best: () => Arcade.get('stack_best', 0) },
+    { file: '2048', title: '2048', like: '2048', tag: 'Puzzle', art: 't2048', best: () => Arcade.get('2048_best', 0) },
+    { file: 'flappy-wings', title: 'Flappy Wings', like: 'Flappy Bird', tag: 'Reflex', art: 'flappy', best: () => Arcade.get('flappy_best', 0) },
+    { file: 'crossy-hop', title: 'Crossy Hop', like: 'Crossy Road', tag: 'Arcade', art: 'crossy', best: () => Arcade.get('crossy_best', 0) },
+    { file: 'snake', title: 'Snake', like: 'Classic Snake', tag: 'Arcade', art: 'snake', best: () => Arcade.get('snake_best', 0) },
+    { file: 'stack-tower', title: 'Stack Tower', like: 'Stack', tag: 'Reflex', art: 'stack', best: () => Arcade.get('stacktower_best', 0) },
+    { file: 'cookie-tycoon', title: 'Cookie Tycoon', like: 'Cookie Clicker', tag: 'Idle', art: 'cookie', best: () => { const n = Arcade.get('cookie_best', 0); return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M baked' : n.toLocaleString() + ' baked'; } },
+    { file: 'brick-breaker', title: 'Brick Breaker', like: 'Breakout', tag: 'Arcade', art: 'bricks', best: () => Arcade.get('bricks_best', 0) },
+    { file: 'minesweeper', title: 'Minesweeper', like: 'Minesweeper', tag: 'Puzzle', art: 'mines', best: () => { const t = Arcade.get('mines_easy_time', null); return t === null ? '—' : t + 's easy'; } },
+  ];
+
+  const grid = document.getElementById('grid');
+  const chips = document.getElementById('chips');
+  const q = document.getElementById('q');
+  let filter = 'All';
+
+  ['All', 'Reflex', 'Arcade', 'Puzzle', 'Idle'].forEach((t) => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (t === filter ? ' on' : '');
+    b.textContent = t;
+    b.addEventListener('click', () => {
+      filter = t;
+      chips.querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c === b));
+      render();
+    });
+    chips.appendChild(b);
+  });
+
+  function render() {
+    const term = q.value.trim().toLowerCase();
+    const list = GAMES.filter((g) =>
+      (filter === 'All' || g.tag === filter) &&
+      (!term || (g.title + ' ' + g.like + ' ' + g.tag).toLowerCase().includes(term)));
+    grid.innerHTML = '';
+    if (!list.length) {
+      grid.innerHTML = '<p class="empty">No games match that search.</p>';
+      return;
+    }
+    list.forEach((g) => {
+      const a = document.createElement('a');
+      a.className = 'card' + (g.featured && filter === 'All' && !term ? ' featured' : '');
+      a.href = `games/${g.file}.html`;
+      a.innerHTML = `${ART[g.art].replace("<svg ", "<svg preserveAspectRatio=\"xMidYMid slice\" ")}
+        <div class="body">
+          <h2>${g.title}</h2>
+          <span class="like">Inspired by ${g.like}</span>
+          <div class="meta"><span class="tag">${g.tag}</span><span class="best">Best: ${g.best()}</span></div>
+        </div>`;
+      grid.appendChild(a);
+    });
+  }
+
+  q.addEventListener('input', render);
+  render();
+})();
+</script>
+</body>
+</html>

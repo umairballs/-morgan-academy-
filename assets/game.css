@@ -1,0 +1,147 @@
+:root {
+  --bg: #0b0d17;
+  --panel: #151a2e;
+  --line: #262d4a;
+  --text: #e8ebff;
+  --muted: #8d95c2;
+  --accent: #5ee7ff;
+  --accent2: #ff5ec8;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.bar h1 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: .5px;
+  flex: 1;
+}
+
+.back, .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  text-decoration: none;
+  background: #20274a;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.back:hover, .btn:hover { border-color: var(--accent); }
+
+.btn.primary {
+  background: linear-gradient(135deg, var(--accent), #7a8bff);
+  color: #0b0d17;
+  border: none;
+}
+
+.stats {
+  display: flex;
+  gap: 14px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.stats b { color: var(--text); }
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px;
+  gap: 12px;
+}
+
+canvas.game {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 150px);
+  width: auto;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #000;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.help {
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+  max-width: 640px;
+  margin: 0 auto 24px;
+  padding: 0 16px;
+  line-height: 1.5;
+}
+
+kbd {
+  background: #20274a;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.wrap { position: relative; }
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(8, 10, 20, .78);
+  border-radius: 12px;
+  text-align: center;
+  padding: 16px;
+}
+
+.overlay.hidden { display: none; }
+.overlay h2 { margin: 0; font-size: 28px; }
+.overlay p { margin: 0; color: var(--muted); }
+
+.touch-pad {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.touch-pad button {
+  min-width: 56px;
+  height: 48px;
+  font-size: 20px;
+}
+
+@media (max-width: 560px) {
+  .stats { font-size: 12px; gap: 8px; }
+  .bar h1 { font-size: 15px; }
+}
