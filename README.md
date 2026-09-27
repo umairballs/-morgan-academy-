@@ -41,3 +41,18 @@ games/*.html        One self-contained file per game
 ```
 
 To add a new game, copy any file in `games/`, change it, and add an entry to the `GAMES` list in `index.html`.
+
+## Deploy to Cloudflare Pages (`*.pages.dev`)
+
+**Option A — no command line (recommended):** in the Cloudflare dashboard go to
+*Workers & Pages → Create → Pages → Connect to Git*, pick this repo, leave the build command empty,
+set the output directory to `/`, and deploy. It redeploys automatically on every push.
+
+**Option B — Wrangler:**
+
+```bash
+npx wrangler login          # or set CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID
+npm run deploy
+```
+
+The site will be live at `https://morgan-academy-arcade.pages.dev`.
