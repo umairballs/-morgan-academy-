@@ -1,46 +1,35 @@
 # Morgan Academy Arcade
 
-A browser game website with 11 games in the style of the most popular browser games.
-**Every game is original code stored in this repo.** Nothing is embedded or loaded from outside sites
-(no iframes, CDNs, image or sound files), so games aren't blocked by school web filters that block game sites.
+A browser game website featuring **real, well-known open-source games**, all stored in this repo.
+Nothing is loaded from outside game sites, so the games still work when a school filter blocks them.
+Analytics, ads and social widgets were removed from each game, and fonts and libraries are served locally.
 
-| Game | Inspired by | Type |
-| --- | --- | --- |
-| **Cube Dash** | Geometry Dash | 3 levels + endless mode, jump pads, orbs, and a built-in soundtrack |
-| **Neon Slope** | Slope / Tunnel Rush | 3D rolling ball on an endless neon track |
-| **Block Stack** | Tetris | Hold, ghost piece, next queue, and levels |
-| **2048** | 2048 | Undo, auto-save, and swipe controls |
-| **Flappy Wings** | Flappy Bird | Medals for high scores |
-| **Crossy Hop** | Crossy Road | Roads, rivers, logs, and a time limit that keeps you moving |
-| **Snake** | Classic Snake | Walls or no-walls mode, bonus gold apples |
-| **Stack Tower** | Stack | Perfect-drop combos |
-| **Cookie Tycoon** | Cookie Clicker | 10 buildings, upgrades, golden cookies, and auto-save |
-| **Brick Breaker** | Breakout | 9 levels and power-ups |
-| **Minesweeper** | Minesweeper | 3 difficulties, flag mode for touchscreens |
+| Game | Type | Creator | License |
+| --- | --- | --- | --- |
+| [HexGL](https://github.com/BKcore/HexGL) | 3D racing | Thibaut Despoulain (BKcore) | MIT |
+| [Hextris](https://github.com/Hextris/hextris) | Puzzle | Hextris team | GPL-3.0 |
+| [Untrusted](https://github.com/AlexNisnevich/untrusted) | Coding puzzle | Alex Nisnevich & Greg Shuflin | CC BY-NC-SA 3.0 |
+| [Tower Blocks](https://github.com/iamkun/tower_game) | Reflex | iamkun / BMQB | MIT |
+| [2048](https://github.com/gabrielecirulli/2048) | Puzzle | Gabriele Cirulli | MIT |
+| [T-Rex Runner](https://github.com/wayou/t-rex-runner) | Reflex | The Chromium Authors | BSD-3-Clause |
+| [Radius Raid](https://github.com/jackrugile/radius-raid-js13k) | Space shooter | Jack Rugile | MIT |
+| [Astray](https://github.com/wwwtyro/Astray) | 3D maze | Rye Terrell | Public domain |
+| [A Dark Room](https://github.com/doublespeakgames/adarkroom) | Text adventure | Doublespeak Games | MPL-2.0 |
 
-Every game works with a keyboard, a mouse, and touchscreens (Chromebooks, iPads, phones).
-Best scores are saved in the browser on each computer.
-
-## How to run it
-
-The site is plain HTML/CSS/JS with no build step or install.
-
-- **Open it directly:** download the repo and double-click `public/index.html`. It works offline, including from a USB stick.
-- **Put it online with GitHub Pages:** in the repo on GitHub go to *Settings → Pages*, set the source to
-  *Deploy from a branch*, and pick the branch and `/ (root)`. The site will be at
-  `https://<username>.github.io/-morgan-academy-/`.
-  (If the school blocks `github.io`, use the offline option.)
+Each game keeps its original license file in `public/games/<game>/`. Untrusted is licensed for
+**non-commercial use only** (CC BY-NC-SA), which covers a school site.
 
 ## Project layout
 
 ```
-public/index.html   Arcade home page (search + categories)
-public/assets/common.js Shared helpers: saving scores, sound effects, touch/swipe input
-public/assets/game.css  Shared styling for every game page
-public/games/*.html  One self-contained file per game
+public/index.html        Arcade home page (search, categories, credits)
+public/assets/           Shared stylesheet, local fonts, game thumbnails
+public/games/<game>/     One folder per game, as released by its creators
+wrangler.toml            Cloudflare deploy config (serves public/)
 ```
 
-To add a new game, copy any file in `public/games/`, change it, and add an entry to the `GAMES` list in `public/index.html`.
+To run it offline, serve the `public/` folder with any static web server (for example `npx serve public`).
+Some games (HexGL, Astray) load files with JavaScript, so opening `index.html` directly from disk may not work for them.
 
 ## Deploy to Cloudflare (`*.workers.dev`)
 
