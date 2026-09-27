@@ -2,6 +2,6 @@
   "name": "morgan-academy-arcade",
   "private": true,
   "scripts": {
-    "deploy": "npx wrangler@latest pages deploy . --project-name morgan-academy-arcade --branch main"
+    "deploy": "npx wrangler@latest deploy"
   }
 }

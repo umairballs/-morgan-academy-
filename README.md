@@ -25,7 +25,7 @@ Best scores are saved in the browser on each computer.
 
 The site is plain HTML/CSS/JS with no build step or install.
 
-- **Open it directly:** download the repo and double-click `index.html`. It works offline, including from a USB stick.
+- **Open it directly:** download the repo and double-click `public/index.html`. It works offline, including from a USB stick.
 - **Put it online with GitHub Pages:** in the repo on GitHub go to *Settings → Pages*, set the source to
   *Deploy from a branch*, and pick the branch and `/ (root)`. The site will be at
   `https://<username>.github.io/-morgan-academy-/`.
@@ -34,25 +34,26 @@ The site is plain HTML/CSS/JS with no build step or install.
 ## Project layout
 
 ```
-index.html          Arcade home page (search + categories)
-assets/common.js    Shared helpers: saving scores, sound effects, touch/swipe input
-assets/game.css     Shared styling for every game page
-games/*.html        One self-contained file per game
+public/index.html   Arcade home page (search + categories)
+public/assets/common.js Shared helpers: saving scores, sound effects, touch/swipe input
+public/assets/game.css  Shared styling for every game page
+public/games/*.html  One self-contained file per game
 ```
 
-To add a new game, copy any file in `games/`, change it, and add an entry to the `GAMES` list in `index.html`.
+To add a new game, copy any file in `public/games/`, change it, and add an entry to the `GAMES` list in `public/index.html`.
 
-## Deploy to Cloudflare Pages (`*.pages.dev`)
+## Deploy to Cloudflare (`*.workers.dev`)
 
-**Option A — no command line (recommended):** in the Cloudflare dashboard go to
-*Workers & Pages → Create → Pages → Connect to Git*, pick this repo, leave the build command empty,
-set the output directory to `/`, and deploy. It redeploys automatically on every push.
+This repo is set up as a Cloudflare Worker that serves the static files in `public/`.
+In the Cloudflare dashboard (*Workers & Pages → your Worker → Settings → Build*) use:
 
-**Option B — Wrangler:**
+- Build command: *(none)*
+- Deploy command: `npx wrangler deploy`
+- Root directory: `/`
+
+Every push to the connected branch redeploys automatically. To deploy by hand:
 
 ```bash
-npx wrangler login          # or set CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID
+npx wrangler login
 npm run deploy
 ```
-
-The site will be live at `https://morgan-academy-arcade.pages.dev`.

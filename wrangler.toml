@@ -1,3 +1,7 @@
-name = "morgan-academy-arcade"
-pages_build_output_dir = "."
-compatibility_date = "2026-09-27"
+name = "morgan-academy"
+compatibility_date = "2025-09-01"
+
+# Static site: serve public/ as-is (no build step).
+[assets]
+directory = "./public"
+not_found_handling = "404-page"
